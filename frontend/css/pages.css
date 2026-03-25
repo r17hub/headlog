@@ -1,0 +1,303 @@
+/* ── Header ───────────────────────────────────────────────────── */
+
+.header {
+    position: sticky;
+    top: 0;
+    z-index: 100;
+    height: 58px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 28px;
+    background: rgba(248,246,241,0.85);
+    backdrop-filter: blur(20px) saturate(1.2);
+    -webkit-backdrop-filter: blur(20px) saturate(1.2);
+    border-bottom: 1px solid var(--border);
+}
+
+.logo {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    text-decoration: none;
+    color: var(--ink);
+}
+
+.logo-mark {
+    width: 30px;
+    height: 30px;
+    border-radius: var(--r-sm);
+    background: linear-gradient(135deg, var(--accent), var(--accent-rich));
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: 0 2px 8px rgba(181,82,58,0.2);
+}
+
+.logo-mark span {
+    font-family: var(--font-serif);
+    font-style: italic;
+    font-size: 1.15rem;
+    font-weight: 500;
+    color: white;
+    margin-top: 1px;
+}
+
+.logo-text {
+    font-family: var(--font-sans);
+    font-size: 1.12rem;
+    font-weight: 600;
+    letter-spacing: -0.01em;
+}
+
+.tab-bar {
+    background: var(--bg-warm);
+    border: 1px solid var(--border);
+    border-radius: var(--r-pill);
+    padding: 3px;
+    display: flex;
+    gap: 2px;
+}
+
+.tab-btn {
+    font-family: var(--font-sans);
+    font-size: 0.84rem;
+    font-weight: 500;
+    color: var(--ink-secondary);
+    background: none;
+    border: none;
+    border-radius: var(--r-pill);
+    padding: 7px 18px;
+    cursor: pointer;
+    transition: all 250ms cubic-bezier(0.4,0,0.2,1);
+    white-space: nowrap;
+}
+
+.tab-btn.active {
+    background: var(--bg-card-elevated);
+    color: var(--ink);
+    font-weight: 600;
+    box-shadow: var(--shadow-card);
+}
+
+.tab-btn:not(.active):hover {
+    color: var(--ink-secondary);
+}
+
+/* ── Views ────────────────────────────────────────────────────── */
+
+.view {
+    display: none;
+}
+
+.view.active {
+    display: block;
+}
+
+/* ── Capture View ────────────────────────────────────────────── */
+
+.capture-view {
+    display: none;
+    height: calc(100vh - 58px);
+    align-items: center;
+    justify-content: center;
+    padding: 40px 28px;
+}
+
+.capture-view.active {
+    display: flex;
+}
+
+.capture-layout {
+    display: flex;
+    align-items: flex-start;
+    justify-content: center;
+    gap: 40px;
+    width: 100%;
+    max-width: 1140px;
+}
+
+.capture-core {
+    flex: 1;
+    max-width: 560px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+}
+
+.capture-box {
+    width: 100%;
+    background: var(--bg-card-elevated);
+    border-radius: var(--r-lg);
+    padding: 28px;
+    box-shadow: var(--shadow-glow);
+    position: relative;
+    overflow: hidden;
+    transition: box-shadow 200ms;
+}
+
+.capture-box::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 80px;
+    background: linear-gradient(to bottom, rgba(196,162,101,0.03), transparent);
+    pointer-events: none;
+}
+
+.input-wrapper {
+    position: relative;
+    width: 100%;
+}
+
+.capture-textarea {
+    position: relative;
+    z-index: 1;
+    font-family: var(--font-serif);
+    font-size: 1.4rem;
+    font-weight: 400;
+    line-height: 1.7;
+    color: var(--ink);
+    caret-color: var(--ink);
+    width: 100%;
+    min-height: 160px;
+    padding: 0;
+    border: none;
+    outline: none;
+    resize: vertical;
+    background: transparent;
+    white-space: pre-wrap;
+    overflow-wrap: break-word;
+}
+
+.capture-textarea::placeholder {
+    font-family: var(--font-serif);
+    font-style: italic;
+    color: var(--ink-whisper);
+}
+
+.capture-divider {
+    height: 1px;
+    background: linear-gradient(90deg, transparent, var(--border-light), transparent);
+    margin: 16px 0;
+}
+
+.capture-footer {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-top: 16px;
+}
+
+.capture-meta {
+    font-family: var(--font-sans);
+    font-size: 0.78rem;
+    color: var(--ink-muted);
+    display: flex;
+    gap: 12px;
+}
+
+/* ── Browse View ─────────────────────────────────────────────── */
+
+.browse-view {
+    display: none;
+    height: calc(100vh - 58px);
+}
+
+.browse-view.active {
+    display: flex;
+}
+
+.browse-main {
+    flex: 1;
+    overflow-y: auto;
+    padding: 28px 32px;
+}
+
+.browse-chat-sidebar {
+    width: 320px;
+    min-width: 320px;
+    background: var(--bg-warm);
+    border-left: 1px solid var(--border);
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+}
+
+.search-bar {
+    position: relative;
+    margin-bottom: 20px;
+}
+
+.search-input {
+    font-family: var(--font-sans);
+    font-size: 0.92rem;
+    font-weight: 400;
+    color: var(--ink);
+    width: 100%;
+    padding: 12px 16px 12px 42px;
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: var(--r-md);
+    box-shadow: var(--shadow-card);
+    outline: none;
+    transition: all 200ms;
+}
+
+.search-input::placeholder {
+    color: var(--ink-ghost);
+}
+
+.search-input:focus {
+    border-color: var(--accent);
+    box-shadow: var(--shadow-card), 0 0 0 3px var(--accent-glow);
+}
+
+.search-icon {
+    position: absolute;
+    left: 14px;
+    top: 50%;
+    transform: translateY(-50%);
+    color: var(--ink-ghost);
+}
+
+/* ── Responsive ───────────────────────────────────────────────── */
+
+@media (max-width: 1100px) {
+    .side-panel {
+        width: 220px;
+        min-width: 220px;
+    }
+    .capture-layout {
+        gap: 24px;
+    }
+}
+
+@media (max-width: 860px) {
+    .side-panel {
+        display: none;
+    }
+    .browse-chat-sidebar {
+        display: none;
+    }
+    .capture-layout {
+        padding: 0;
+    }
+    .capture-core {
+        max-width: 100%;
+    }
+    .capture-box {
+        padding: 24px 18px;
+    }
+    .capture-view {
+        padding: 20px 18px;
+    }
+    .browse-main {
+        padding: 20px 18px;
+    }
+    .settings-drawer {
+        width: 100%;
+    }
+}

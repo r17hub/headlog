@@ -1,0 +1,211 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="default">
+    <title>Headlog</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,500;0,600;1,400;1,500&family=DM+Sans:ital,wght@0,300;0,400;0,500;0,600;0,700;1,400&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/css/base.css">
+    <link rel="stylesheet" href="/css/components.css">
+    <link rel="stylesheet" href="/css/pages.css">
+</head>
+<body>
+
+    <header class="header">
+        <a class="logo" href="#">
+            <div class="logo-mark"><span>h</span></div>
+            <div class="logo-text">headlog</div>
+        </a>
+        <div class="tab-bar">
+            <button class="tab-btn active" data-view="capture">&#9998; Capture</button>
+            <button class="tab-btn" data-view="browse">&#128214; Browse Thoughts</button>
+        </div>
+        <button id="settingsBtn" class="settings-btn" aria-label="Settings">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+        </button>
+    </header>
+
+    <!-- ── Capture View ──────────────────────────────────────── -->
+
+    <div class="capture-view view active" id="captureView">
+        <div class="capture-layout">
+
+            <div class="side-panel" id="remindersPanel">
+                <div class="side-panel-label">Reminders</div>
+                <div class="side-widget">
+                    <div id="remindersWidget">
+                        <p class="empty-message">No upcoming reminders</p>
+                    </div>
+                    <div id="privateReminders" class="private-items"></div>
+                </div>
+                <div class="peek-section">
+                    <button class="peek-btn" data-type="reminders" title="Peek private">&#128274;</button>
+                    <div class="peek-progress"><div class="peek-bar"></div></div>
+                </div>
+            </div>
+
+            <div class="capture-core">
+                <div id="captureBox" class="capture-box">
+                    <div class="input-wrapper">
+                        <div class="ghost-layer" id="ghostLayer" aria-hidden="true"></div>
+                        <textarea id="captureInput" class="capture-textarea" placeholder="What's on your mind?" autofocus></textarea>
+                    </div>
+                    <div class="capture-divider"></div>
+                    <div class="chips-section">
+                        <div id="chipsDefault" class="chip-grid">
+                            <button class="chip" data-tag="routine">#routine</button>
+                            <button class="chip" data-tag="health">#health</button>
+                            <button class="chip" data-tag="idea">#idea</button>
+                            <button class="chip" data-tag="tech">#tech</button>
+                            <button class="chip" data-tag="todo">#todo</button>
+                            <button class="chip" data-tag="reminder">#reminder</button>
+                            <button class="chip" data-tag="vent">#vent</button>
+                            <button class="chip" data-tag="reflection">#reflection</button>
+                        </div>
+                        <div id="chipsExtra" class="chip-grid chips-extra">
+                            <button class="chip" data-tag="finance">#finance</button>
+                            <button class="chip" data-tag="career">#career</button>
+                            <button class="chip" data-tag="learning">#learning</button>
+                            <button class="chip" data-tag="productivity">#productivity</button>
+                            <button class="chip" data-tag="spiritual">#spiritual</button>
+                            <button class="chip" data-tag="gratitude">#gratitude</button>
+                            <button class="chip" data-tag="lesson">#lesson</button>
+                            <button class="chip" data-tag="decision">#decision</button>
+                            <button class="chip" data-tag="question">#question</button>
+                            <button class="chip" data-tag="people">#people</button>
+                            <button class="chip" data-tag="selfhelp">#selfhelp</button>
+                            <button class="chip" data-tag="travel">#travel</button>
+                            <button class="chip" data-tag="random">#random</button>
+                            <button class="chip private-chip" data-tag="private_todo">&#128274; #private_todo</button>
+                            <button class="chip private-chip" data-tag="private_reminder">&#128274; #private_reminder</button>
+                        </div>
+                        <button id="chipsToggle" class="chip-toggle">more tags</button>
+                    </div>
+                    <div class="capture-footer">
+                        <div class="capture-meta">
+                            <span id="wordCount">0 words</span>
+                            <span>&#8984;Enter</span>
+                        </div>
+                        <button id="saveBtn" class="save-btn">Save Thought</button>
+                    </div>
+                </div>
+            </div>
+
+            <div class="side-panel" id="todosPanel">
+                <div class="side-panel-label">Open Todos</div>
+                <div class="side-widget">
+                    <div id="todosWidget">
+                        <p class="empty-message">No open todos</p>
+                    </div>
+                    <div id="privateTodos" class="private-items"></div>
+                </div>
+                <div class="peek-section">
+                    <button class="peek-btn" data-type="todos" title="Peek private">&#128274;</button>
+                    <div class="peek-progress"><div class="peek-bar"></div></div>
+                </div>
+            </div>
+
+        </div>
+    </div>
+
+    <!-- ── Browse View ───────────────────────────────────────── -->
+
+    <div class="browse-view view" id="browseView">
+        <div class="browse-main">
+            <div class="search-bar">
+                <svg class="search-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/></svg>
+                <input id="searchInput" class="search-input" type="text" placeholder="Search your thoughts...">
+            </div>
+            <div class="browse-sub-tabs">
+                <button class="sub-tab active" data-filter="all">All thoughts</button>
+                <button class="sub-tab" data-filter="reminders">Reminders</button>
+                <button class="sub-tab" data-filter="todos">Todos</button>
+            </div>
+            <div id="tagFilters" class="tag-filters"></div>
+            <div id="thoughtCards" class="thought-cards"></div>
+        </div>
+        <div class="browse-chat-sidebar">
+            <div class="chat-header">
+                <div class="chat-title">Chat with your thoughts</div>
+                <div id="modelBadge" class="model-badge">Ollama 3B</div>
+            </div>
+            <div id="chatMessages" class="chat-messages"></div>
+            <div class="chat-input-area">
+                <input id="chatInput" class="chat-input" type="text" placeholder="Ask about your thoughts...">
+                <button id="chatSend" class="chat-send-btn">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M22 2L11 13"/><path d="M22 2L15 22L11 13L2 9L22 2Z"/></svg>
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- ── Toast ─────────────────────────────────────────────── -->
+    <div id="toast" class="toast"></div>
+
+    <!-- ── Settings Drawer ───────────────────────────────────── -->
+    <div id="settingsOverlay" class="settings-overlay"></div>
+    <div id="settingsDrawer" class="settings-drawer">
+        <button id="settingsClose" class="settings-close">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6L6 18"/><path d="M6 6l12 12"/></svg>
+        </button>
+
+        <div class="settings-section">
+            <div class="settings-section-title">AI Provider</div>
+            <div class="radio-group">
+                <div class="settings-row">
+                    <div class="radio-row" data-provider="ollama">
+                        <div class="radio-dot selected"></div>
+                        <div>
+                            <div class="radio-label">Ollama (local)</div>
+                            <div class="settings-desc">llama3.2:3b &mdash; free, fast, no internet needed</div>
+                        </div>
+                    </div>
+                </div>
+                <div class="settings-row">
+                    <div class="radio-row" data-provider="gemini">
+                        <div class="radio-dot"></div>
+                        <div>
+                            <div class="radio-label">Gemini Flash</div>
+                            <div class="settings-desc">Google&rsquo;s Gemini Flash &mdash; free tier available</div>
+                        </div>
+                    </div>
+                </div>
+                <div class="settings-row">
+                    <div class="radio-row" data-provider="none">
+                        <div class="radio-dot"></div>
+                        <div>
+                            <div class="radio-label">Disabled</div>
+                            <div class="settings-desc">Keyword tagging only, chat disabled</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div id="apiKeyRow" class="api-key-row" style="display:none;margin-top:10px">
+                <input id="apiKeyInput" type="password" placeholder="Gemini API key" class="api-key-input">
+                <button id="apiKeySave" class="api-key-save">Save</button>
+            </div>
+        </div>
+
+        <div class="settings-section">
+            <div class="settings-section-title">Data</div>
+            <div class="settings-row" style="padding:16px">
+                <div id="statsDisplay" class="stats-display"></div>
+                <button class="settings-export-btn">Export as JSON</button>
+            </div>
+        </div>
+
+        <div class="settings-section">
+            <div class="settings-section-title">About</div>
+            <p class="settings-about">
+                A raw dump of what&rsquo;s in your head. Headlog captures your thoughts with zero friction &mdash; type, save, move on. Intelligence emerges from the accumulated text over time.
+            </p>
+        </div>
+    </div>
+
+    <script src="/js/app.js"></script>
+</body>
+</html>
