@@ -60,8 +60,8 @@ KEYWORD_MAP = {
     "lesson":       ["lesson", "regret", "mistake", "learned", "never again", "next time", "should have", "could have", "won't repeat", "taught me", "hard way", "wisdom"],
     "decision":     ["decide", "should i", "dilemma", "torn between", "pros and cons", "trade-off", "weighing", "option", "choice", "either", "or should", "alternative", "commit to"],
     "question":     ["wonder", "curious", "how does", "why does", "look up", "research later", "what is", "does anyone", "is it possible", "i want to know", "figure out"],
-    "todo":         ["todo", "to-do", "to do", "action item", "follow up", "need to", "have to", "must", "pending", "remember to", "don't forget", "get done", "complete", "finish", "task"],
-    "reminder":     ["remind", "meeting", "appointment", "today at", "tomorrow", "deadline", "urgent", "by friday", "by monday", "by end of", "this week", "next week", "at noon", "at night", "schedule", "calendar", "due date", "rsvp", "pickup"],
+    "todo":         ["todo", "to-do", "to do", "action item", "follow up", "need to", "have to", "must", "pending", "remember to", "don't forget", "get done", "complete", "finish", "task", "reply to", "respond to", "get back to", "look into", "take care", "work on", "deal with", "sort out", "set up", "clean up", "wrap up", "fill out", "sign up", "make sure"],
+    "reminder":     ["remind", "meeting", "appointment", "today at", "tomorrow", "deadline", "urgent", "by friday", "by monday", "by end of", "this week", "next week", "at noon", "at night", "schedule", "calendar", "due date", "rsvp", "pickup", "by today", "by tonight", "by tomorrow", "by eod", "end of day", "before tomorrow"],
     "people":       ["met someone", "follow up with", "call", "reach out", "catch up", "friend", "family", "colleague", "introduced", "connection", "relationship", "brother", "sister", "mom", "dad", "girlfriend", "boyfriend", "wife", "husband"],
     "selfhelp":     ["improve", "discipline", "willpower", "growth", "confidence", "accountability", "mindset", "self care", "boundaries", "assertive", "emotional intelligence", "journaling", "affirmation", "visualization", "resilience"],
     "travel":       ["travel", "trip", "vacation", "flight", "bucket list", "adventure", "trek", "hike", "destination", "passport", "visa", "hotel", "airbnb", "itinerary", "explore", "road trip", "backpack"],
@@ -84,17 +84,76 @@ for _tag, _keywords in KEYWORD_MAP.items():
     _TAG_MATCHERS[_tag] = (_regex, _substring)
 
 
+# ── Imperative-verb detection ────────────────────────────────────
+# When the first word is a bare action verb ("Reply …", "Send …", "Fix …"),
+# the thought is almost certainly a task.
+_IMPERATIVE_VERBS = {
+    "add", "apply", "approve", "arrange", "ask", "assign", "attend",
+    "book", "buy",
+    "call", "cancel", "check", "clean", "close", "collect", "confirm",
+    "contact", "coordinate", "create",
+    "debug", "delegate", "deliver", "deploy", "discuss", "download",
+    "draft", "drop",
+    "edit", "email", "escalate",
+    "fill", "finalize", "fix", "follow", "forward",
+    "get", "give",
+    "handle",
+    "implement", "inform", "install", "investigate",
+    "join",
+    "look",
+    "make", "meet", "merge", "message", "move",
+    "notify",
+    "order", "organize",
+    "pay", "pick", "ping", "plan", "post", "prepare", "print",
+    "proofread", "publish", "push", "put",
+    "reach", "register", "remove", "renew", "replace", "reply",
+    "report", "request", "reschedule", "resolve", "respond", "return",
+    "review", "revise",
+    "save", "schedule", "send", "set", "setup", "share", "ship",
+    "sign", "sort", "start", "submit", "switch",
+    "take", "tell", "test", "text", "transfer",
+    "update", "upgrade", "upload",
+    "verify", "visit",
+    "watch", "withdraw", "wrap", "write",
+}
+
+# ── Deadline-pattern detection ───────────────────────────────────
+_DEADLINE_RE = re.compile(
+    r"\b(?:"
+    r"by\s+(?:today|tonight|tomorrow|eod|end\s+of\s+(?:day|week)|"
+    r"monday|tuesday|wednesday|thursday|friday|saturday|sunday)"
+    r"|before\s+(?:tomorrow|end\s+of|monday|tuesday|wednesday|"
+    r"thursday|friday|saturday|sunday)"
+    r"|due\s+(?:today|tomorrow|by|on|before)"
+    r"|asap|as\s+soon\s+as\s+possible"
+    r")\b",
+    re.IGNORECASE,
+)
+
+
 # ── Auto-tagging ─────────────────────────────────────────────────
 
 def auto_tag(text):
     lower = text.lower()
     tags = []
+
+    # Layer 1: keyword / substring matching
     for tag, (regex, substrings) in _TAG_MATCHERS.items():
         if regex and regex.search(lower):
             tags.append(tag)
             continue
         if any(kw in lower for kw in substrings):
             tags.append(tag)
+
+    # Layer 2: imperative first-word → todo
+    words = lower.split()
+    if words and words[0] in _IMPERATIVE_VERBS and "todo" not in tags:
+        tags.append("todo")
+
+    # Layer 3: deadline phrase → todo
+    if _DEADLINE_RE.search(lower) and "todo" not in tags:
+        tags.append("todo")
+
     return tags if tags else ["random"]
 
 
@@ -412,7 +471,7 @@ USER'S QUESTION: {user_message}"""
 
 # ── AI Tag Enrichment (Layer 3) ──────────────────────────────────
 
-def _call_ai_classify(prompt, config):
+def _call_ai_classify(prompt, config, timeout=30, max_tokens=50):
     provider = config.get("ai_provider", "ollama")
     model = config.get("ai_model", "llama3.2:3b")
 
@@ -425,12 +484,12 @@ def _call_ai_classify(prompt, config):
                    f"models/{model}:generateContent?key={api_key}")
             data = json.dumps({
                 "contents": [{"parts": [{"text": prompt}]}],
-                "generationConfig": {"temperature": 0.1, "maxOutputTokens": 50},
+                "generationConfig": {"temperature": 0.1, "maxOutputTokens": max_tokens},
             }).encode()
             req = urllib.request.Request(
                 url, data=data, headers={"Content-Type": "application/json"},
             )
-            with urllib.request.urlopen(req, timeout=30) as resp:
+            with urllib.request.urlopen(req, timeout=timeout) as resp:
                 result = json.loads(resp.read())
                 return result["candidates"][0]["content"]["parts"][0]["text"]
         except Exception:
@@ -439,13 +498,13 @@ def _call_ai_classify(prompt, config):
     try:
         data = json.dumps({
             "model": model, "prompt": prompt, "stream": False,
-            "options": {"temperature": 0.1, "num_predict": 50},
+            "options": {"temperature": 0.1, "num_predict": max_tokens},
         }).encode()
         req = urllib.request.Request(
             "http://localhost:11434/api/generate",
             data=data, headers={"Content-Type": "application/json"},
         )
-        with urllib.request.urlopen(req, timeout=30) as resp:
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
             return json.loads(resp.read()).get("response")
     except Exception:
         return None
@@ -560,6 +619,41 @@ def maybe_enrich(thought):
     ).start()
 
 
+def quick_ai_classify(text):
+    """Synchronous LLM fallback when keyword detection yields only 'random'.
+
+    Uses a tight timeout so the save path stays responsive; returns None
+    (caller keeps 'random') if the LLM is unavailable or too slow.
+    """
+    config = load_config()
+    provider = config.get("ai_provider", "ollama")
+    if provider == "none":
+        return None
+    if provider == "gemini" and not config.get("api_key"):
+        return None
+
+    prompt = (
+        "Classify this personal note into 1-2 tags from this EXACT list only:\n\n"
+        "routine, health, finance, idea, career, learning, tech, "
+        "productivity, spiritual, reflection, gratitude, vent, lesson, "
+        "decision, question, todo, reminder, people, selfhelp, travel\n\n"
+        "Rules:\n"
+        "- Return ONLY comma-separated tag names, nothing else\n"
+        "- For action items, tasks, or imperative sentences → todo\n"
+        "- For time-bound items with deadlines → add reminder\n"
+        "- If genuinely uncategorizable → return: random\n\n"
+        f'Note: "{text}"\n\nTags:'
+    )
+
+    raw = _call_ai_classify(prompt, config, timeout=8, max_tokens=30)
+    if not raw:
+        return None
+
+    candidates = [t.strip().lower().rstrip(".") for t in raw.split(",")]
+    valid = [t for t in candidates if t in VALID_ENRICHMENT_TAGS]
+    return valid or None
+
+
 # ── Frontend server (static files on :7777) ──────────────────────
 
 class FrontendHandler(SimpleHTTPRequestHandler):
@@ -657,6 +751,13 @@ class APIHandler(SimpleHTTPRequestHandler):
                 manual_tags = body.get("tags", [])
                 detected = auto_tag(text)
                 final_tags = merge_tags(manual_tags, detected)
+
+                if final_tags == ["random"]:
+                    ai_tags = quick_ai_classify(text)
+                    if ai_tags:
+                        final_tags = ai_tags
+                        detected = ai_tags
+
                 thought = save_thought(text, final_tags)
                 try:
                     write_to_journal(text, final_tags, thought["created_at"])
@@ -767,9 +868,8 @@ def main():
 
     def shutdown(sig, frame):
         print("\nShutting down...")
-        api_server.shutdown()
-        frontend_server.shutdown()
-        sys.exit(0)
+        threading.Thread(target=api_server.shutdown, daemon=True).start()
+        threading.Thread(target=frontend_server.shutdown, daemon=True).start()
 
     signal.signal(signal.SIGINT, shutdown)
     signal.signal(signal.SIGTERM, shutdown)
