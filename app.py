@@ -146,12 +146,15 @@ def auto_tag(text):
             tags.append(tag)
 
     # Layer 2: imperative first-word → todo
+    # Skip if reminder already matched — the verb is part of reminder phrasing
+    # (e.g. "set me a reminder", "schedule a meeting")
     words = lower.split()
-    if words and words[0] in _IMPERATIVE_VERBS and "todo" not in tags:
+    if words and words[0] in _IMPERATIVE_VERBS and "todo" not in tags and "reminder" not in tags:
         tags.append("todo")
 
     # Layer 3: deadline phrase → todo
-    if _DEADLINE_RE.search(lower) and "todo" not in tags:
+    # Skip if reminder already matched — deadline reinforces the reminder, not a separate task
+    if _DEADLINE_RE.search(lower) and "todo" not in tags and "reminder" not in tags:
         tags.append("todo")
 
     return tags if tags else ["random"]
@@ -249,6 +252,20 @@ def save_thought(text, tags_list):
         conn.close()
 
 
+def delete_thought(thought_id):
+    conn = get_db()
+    try:
+        row = conn.execute("SELECT * FROM thoughts WHERE id = ?", (thought_id,)).fetchone()
+        if not row:
+            return None
+        thought = _row_to_dict(row)
+        conn.execute("DELETE FROM thoughts WHERE id = ?", (thought_id,))
+        conn.commit()
+        return thought
+    finally:
+        conn.close()
+
+
 def get_thoughts(limit=50, offset=0, tag=None, date=None):
     clauses, params = [], []
 
@@ -336,6 +353,41 @@ def write_to_journal(text, tags_list, created_at):
         with open(file_path, "w", encoding="utf-8") as f:
             f.write(f"# Thoughts — {full_date}\n")
             f.write(entry)
+
+
+def remove_from_journal(created_at, text):
+    try:
+        dt = datetime.strptime(created_at, "%Y-%m-%dT%H:%M:%S")
+        year, month, day = dt.strftime("%Y"), dt.strftime("%m"), dt.strftime("%d")
+        time_str = dt.strftime("%H:%M:%S")
+
+        file_path = JOURNAL_DIR / year / month / f"{year}-{month}-{day}.md"
+        if not file_path.exists():
+            return
+
+        content = file_path.read_text(encoding="utf-8")
+        marker = f"\n### {time_str}  "
+        start = content.find(marker)
+        if start == -1:
+            return
+
+        end_marker = "\n---\n"
+        end = content.find(end_marker, start)
+        if end == -1:
+            return
+
+        if text not in content[start:end + len(end_marker)]:
+            return
+
+        updated = content[:start] + content[end + len(end_marker):]
+
+        stripped = updated.strip()
+        if stripped.startswith("# Thoughts") and "### " not in stripped:
+            file_path.unlink()
+        else:
+            file_path.write_text(updated, encoding="utf-8")
+    except Exception as e:
+        print(f"Journal removal error: {e}")
 
 
 def rebuild_journal_from_db():
@@ -734,6 +786,25 @@ class APIHandler(SimpleHTTPRequestHandler):
                 if row:
                     return self._json_response(_row_to_dict(row))
                 return self._json_response({"error": "not found"}, 404)
+            except Exception as e:
+                return self._json_response({"error": str(e)}, 500)
+
+        self.send_error(404)
+
+    def do_DELETE(self):
+        path = urlparse(self.path).path
+
+        if path.startswith("/api/thoughts/"):
+            try:
+                thought_id = int(path.split("/")[-1])
+                thought = delete_thought(thought_id)
+                if not thought:
+                    return self._json_response({"error": "not found"}, 404)
+                try:
+                    remove_from_journal(thought["created_at"], thought["text"])
+                except Exception as je:
+                    print(f"Journal cleanup failed: {je}")
+                return self._json_response({"status": "ok", "id": thought_id})
             except Exception as e:
                 return self._json_response({"error": str(e)}, 500)
 

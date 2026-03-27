@@ -332,7 +332,8 @@ function renderTagPills(tags, exclude) {
 }
 
 function renderReminderItem(thought) {
-    return `<div class="side-item">
+    return `<div class="side-item" data-id="${thought.id}">
+        <button class="side-delete-btn" title="Delete">&times;</button>
         <div class="side-item-time">
             ${formatRelativeDate(thought.created_at)}
             ${renderTagPills(thought.tags, 'reminder')}
@@ -342,7 +343,8 @@ function renderReminderItem(thought) {
 }
 
 function renderTodoItem(thought) {
-    return `<div class="side-item">
+    return `<div class="side-item" data-id="${thought.id}">
+        <button class="side-delete-btn" title="Delete">&times;</button>
         <div class="todo-item">
             <input type="checkbox" class="todo-checkbox">
             <div>
@@ -397,6 +399,70 @@ function handleTodoCheck(e) {
         item.classList.add('done');
     } else {
         item.classList.remove('done');
+    }
+}
+
+
+/* ── Section 7a: Delete Thought ───────────────────────────────── */
+
+function handleDeleteClick(e) {
+    const btn = e.target.closest('.delete-btn, .side-delete-btn');
+    if (!btn) return;
+    e.stopPropagation();
+    e.preventDefault();
+
+    if (btn.classList.contains('confirm')) {
+        if (btn._confirmTimeout) clearTimeout(btn._confirmTimeout);
+        const item = btn.closest('[data-id]');
+        if (item) performDelete(item.dataset.id, item, btn);
+        return;
+    }
+
+    document.querySelectorAll('.delete-btn.confirm, .side-delete-btn.confirm').forEach(b => {
+        if (b !== btn) {
+            if (b._confirmTimeout) clearTimeout(b._confirmTimeout);
+            b.classList.remove('confirm');
+            b.innerHTML = '&times;';
+        }
+    });
+
+    btn.classList.add('confirm');
+    btn.textContent = 'Delete?';
+
+    btn._confirmTimeout = setTimeout(() => {
+        btn.classList.remove('confirm');
+        btn.innerHTML = '&times;';
+    }, 3000);
+}
+
+async function performDelete(id, element, btn) {
+    btn.textContent = '...';
+    btn.style.pointerEvents = 'none';
+
+    try {
+        const res = await fetch(`${API}/api/thoughts/${id}`, { method: 'DELETE' });
+        if (!res.ok) throw new Error('Delete failed');
+
+        element.style.animation = 'none';
+        element.style.transition = 'opacity 250ms ease, transform 250ms ease';
+        element.style.opacity = '0';
+        element.style.transform = 'translateX(16px)';
+
+        setTimeout(() => {
+            element.remove();
+            loadSidePanels();
+        }, 260);
+
+        showToast('Thought deleted');
+
+        if (document.getElementById('browseView')?.classList.contains('active')) {
+            loadTagFilters();
+        }
+    } catch (err) {
+        showToast(`Error: ${err.message}`);
+        btn.classList.remove('confirm');
+        btn.innerHTML = '&times;';
+        btn.style.pointerEvents = '';
     }
 }
 
@@ -619,12 +685,13 @@ function renderThoughtCards(thoughts, highlightQuery) {
 
         const priv = isPrivate ? ` private-card" data-text="${escapeAttr(t.text)}` : '';
 
-        return `<div class="thought-card${priv}" style="animation-delay:${i * 30}ms">
+        return `<div class="thought-card${priv}" data-id="${t.id}" style="animation-delay:${i * 30}ms">
             <div class="thought-header">
                 <span class="thought-time">${formatCardDate(t.created_at)}</span>
                 <div class="thought-tags">${tagPills}</div>
             </div>
             <div class="thought-text">${displayText}</div>
+            <button class="delete-btn" title="Delete thought">&times;</button>
         </div>`;
     }).join('');
 }
@@ -633,6 +700,7 @@ function renderThoughtCards(thoughts, highlightQuery) {
 /* ── Browse: Private card reveal ─────────────────────────────── */
 
 function handlePrivateCardClick(e) {
+    if (e.target.closest('.delete-btn, .side-delete-btn')) return;
     const card = e.target.closest('.private-card');
     if (!card || card.classList.contains('revealed')) return;
 
@@ -698,13 +766,15 @@ async function loadMoreThoughts() {
 
             const div = document.createElement('div');
             div.className = `thought-card${isPrivate ? ' private-card' : ''}`;
+            div.dataset.id = t.id;
             div.style.animationDelay = `${idx * 30}ms`;
             if (isPrivate) div.dataset.text = t.text;
             div.innerHTML = `<div class="thought-header">
                 <span class="thought-time">${formatCardDate(t.created_at)}</span>
                 <div class="thought-tags">${tagPills}</div>
             </div>
-            <div class="thought-text">${displayText}</div>`;
+            <div class="thought-text">${displayText}</div>
+            <button class="delete-btn" title="Delete thought">&times;</button>`;
             container.appendChild(div);
         });
     } catch (_) {}
@@ -1001,7 +1071,12 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 
+    document.getElementById('thoughtCards')?.addEventListener('click', handleDeleteClick);
     document.getElementById('thoughtCards')?.addEventListener('click', handlePrivateCardClick);
+    document.getElementById('remindersWidget')?.addEventListener('click', handleDeleteClick);
+    document.getElementById('todosWidget')?.addEventListener('click', handleDeleteClick);
+    document.getElementById('privateReminders')?.addEventListener('click', handleDeleteClick);
+    document.getElementById('privateTodos')?.addEventListener('click', handleDeleteClick);
 
     const browseMain = document.querySelector('.browse-main');
     if (browseMain) {

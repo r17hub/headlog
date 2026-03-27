@@ -181,11 +181,13 @@
 .side-panel {
     width: 260px;
     min-width: 260px;
+    max-height: calc(100vh - 138px);
     opacity: 0.7;
     transition: opacity 0.35s ease;
     display: flex;
     flex-direction: column;
     gap: 8px;
+    overflow: hidden;
 }
 
 .side-panel:hover {
@@ -209,10 +211,12 @@
     box-shadow: var(--shadow-card);
     padding: 14px 16px;
     flex: 1;
+    min-height: 0;
     overflow-y: auto;
 }
 
 .side-item {
+    position: relative;
     padding: 10px 0;
     border-bottom: 1px solid var(--border-subtle);
 }
@@ -297,11 +301,17 @@
     overflow: hidden;
     opacity: 0;
     transition: max-height 0.4s ease, opacity 0.3s ease;
+    border-radius: var(--r-md);
 }
 
 .private-items.revealed {
-    max-height: 300px;
+    max-height: 200px;
     opacity: 1;
+    background: var(--bg-card);
+    border: 1px dashed var(--ink-ghost);
+    padding: 6px 16px;
+    box-shadow: var(--shadow-card);
+    overflow-y: auto;
 }
 
 .peek-section {
@@ -805,6 +815,7 @@
 }
 
 .thought-card {
+    position: relative;
     background: var(--bg-card);
     border: 1px solid var(--border);
     border-radius: var(--r-md);
@@ -866,6 +877,97 @@
     font-weight: 400;
     color: var(--ink);
     line-height: 1.65;
+}
+
+/* ── Delete Buttons ───────────────────────────────────────────── */
+
+.delete-btn {
+    position: absolute;
+    top: 10px;
+    right: 10px;
+    width: 24px;
+    height: 24px;
+    border-radius: 50%;
+    border: none;
+    background: transparent;
+    color: var(--ink-ghost);
+    cursor: pointer;
+    font-size: 1.1rem;
+    line-height: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    opacity: 0;
+    transition: all 200ms;
+    z-index: 2;
+}
+
+.thought-card:hover .delete-btn {
+    opacity: 0.5;
+}
+
+.delete-btn:hover {
+    opacity: 1;
+    background: rgba(199, 93, 93, 0.10);
+    color: #C75D5D;
+}
+
+.delete-btn.confirm {
+    opacity: 1;
+    width: auto;
+    height: auto;
+    border-radius: var(--r-pill);
+    padding: 3px 10px;
+    background: rgba(199, 93, 93, 0.10);
+    color: #C75D5D;
+    font-size: 0.70rem;
+    font-family: var(--font-sans);
+    font-weight: 600;
+}
+
+.side-delete-btn {
+    position: absolute;
+    top: 10px;
+    right: -2px;
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+    border: none;
+    background: transparent;
+    color: var(--ink-ghost);
+    cursor: pointer;
+    font-size: 0.95rem;
+    line-height: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    opacity: 0;
+    transition: all 200ms;
+    z-index: 2;
+}
+
+.side-item:hover .side-delete-btn {
+    opacity: 0.5;
+}
+
+.side-delete-btn:hover {
+    opacity: 1;
+    background: rgba(199, 93, 93, 0.10);
+    color: #C75D5D;
+}
+
+.side-delete-btn.confirm {
+    opacity: 1;
+    width: auto;
+    height: auto;
+    border-radius: var(--r-pill);
+    padding: 2px 8px;
+    background: rgba(199, 93, 93, 0.10);
+    color: #C75D5D;
+    font-size: 0.64rem;
+    font-family: var(--font-sans);
+    font-weight: 600;
+    right: -4px;
 }
 
 .thought-text mark {
