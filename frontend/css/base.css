@@ -5,62 +5,89 @@
 }
 
 :root {
-    --bg: #F8F6F1;
-    --bg-warm: #F3F0E8;
-    --bg-card: #FFFEFB;
-    --bg-card-elevated: #FFFFFF;
+    /* ── Base Palette ─────────────────────────────────────── */
+    --bg: #FAF8F5;
+    --bg-alt: #F3F0EB;
+    --surface: #FFFFFF;
+    --surface-hover: #FDFCFA;
+    --accent: #B5542A;
+    --accent-soft: rgba(181, 84, 42, 0.07);
+    --accent-mid: rgba(181, 84, 42, 0.15);
+    --accent-light: #F5E6DF;
+    --text-primary: #2C2520;
+    --text-mid: #6B5F56;
+    --text-dim: #A89E95;
+    --text-faint: #C8BFB6;
+    --border: #E8E2DB;
+    --border-light: #F0ECE6;
 
-    --border: #E0DBD2;
-    --border-light: #E8E3DA;
-    --border-subtle: #EDEAD3;
+    /* ── Star / Importance ────────────────────────────────── */
+    --star: #D4940E;
+    --star-soft: rgba(212, 148, 14, 0.07);
+    --star-glow: rgba(212, 148, 14, 0.19);
 
-    --ink: #1E1B18;
-    --ink-secondary: #504A45;
-    --ink-muted: #78726B;
-    --ink-ghost: #96908A;
-    --ink-whisper: #B0A99F;
+    /* ── Semantic ─────────────────────────────────────────── */
+    --green: #3D8B6E;
+    --green-soft: rgba(61, 139, 110, 0.08);
+    --green-bg: #E8F5EE;
+    --amber: #C47A20;
+    --amber-soft: rgba(196, 122, 32, 0.08);
+    --red: #C44B3F;
+    --red-soft: rgba(196, 75, 63, 0.06);
+    --purple: #7C5FC2;
+    --purple-soft: rgba(124, 95, 194, 0.08);
 
-    --accent: #B5523A;
-    --accent-rich: #9E4530;
-    --accent-glow: rgba(181,82,58,0.06);
-    --accent-warm: rgba(181,82,58,0.10);
-    --gold: #C4A265;
-    --gold-light: rgba(196,162,101,0.12);
+    /* ── Typography ───────────────────────────────────────── */
+    --font-serif: 'Source Serif 4', Georgia, 'Times New Roman', serif;
+    --font-sans: 'DM Sans', system-ui, -apple-system, sans-serif;
 
-    --font-serif: 'Cormorant Garamond', Georgia, 'Times New Roman', serif;
-    --font-sans: 'DM Sans', -apple-system, BlinkMacSystemFont, sans-serif;
-
+    /* ── Radius ───────────────────────────────────────────── */
     --r-sm: 8px;
-    --r-md: 12px;
-    --r-lg: 16px;
-    --r-pill: 100px;
+    --r-md: 10px;
+    --r-lg: 14px;
+    --r-xl: 16px;
+    --r-pill: 99px;
 
-    --shadow-card: 0 1px 2px rgba(30,27,24,0.04), 0 4px 16px rgba(30,27,24,0.03);
+    /* ── Shadow ───────────────────────────────────────────── */
+    --shadow-card: 0 2px 12px rgba(44, 37, 32, 0.04);
+
+    /* ── Legacy aliases (shared modules compatibility) ───── */
+    --ink: var(--text-primary);
+    --ink-secondary: var(--text-mid);
+    --ink-muted: var(--text-dim);
+    --ink-ghost: var(--text-faint);
+    --ink-whisper: var(--text-faint);
+    --bg-card: var(--surface);
+    --bg-card-elevated: var(--surface);
+    --bg-warm: var(--bg-alt);
+    --border-subtle: var(--border-light);
+    --accent-rich: #9E4530;
+    --accent-glow: rgba(181, 84, 42, 0.06);
+    --accent-warm: rgba(181, 84, 42, 0.10);
+    --font-mono: 'DM Mono', ui-monospace, monospace;
     --shadow-elevated: 0 2px 4px rgba(30,27,24,0.05), 0 8px 32px rgba(30,27,24,0.06);
-    --shadow-glow: 0 0 0 1px var(--border), 0 4px 24px rgba(30,27,24,0.05), 0 12px 48px rgba(30,27,24,0.04);
+    --shadow-glow: 0 0 0 1px var(--border), var(--shadow-card);
 }
 
-html {
-    font-size: 16px;
-}
+html { font-size: 16px; }
 
 body {
     font-family: var(--font-sans);
+    font-weight: 400;
+    font-synthesis: none;
     background: var(--bg);
-    color: var(--ink);
+    color: var(--text-primary);
     height: 100vh;
     overflow: hidden;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
-    background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)' opacity='0.025'/%3E%3C/svg%3E");
 }
 
-::-webkit-scrollbar { width: 5px; }
+::-webkit-scrollbar { width: 6px; }
 ::-webkit-scrollbar-track { background: transparent; }
-::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
-::-webkit-scrollbar-thumb:hover { background: var(--ink-ghost); }
+::-webkit-scrollbar-thumb { background: #E8E2DB; border-radius: 3px; }
 
-button { font-family: inherit; }
+button { font-family: inherit; cursor: pointer; }
 
 @keyframes shake {
     0%, 100% { transform: translateX(0); }
@@ -68,9 +95,7 @@ button { font-family: inherit; }
     75% { transform: translateX(4px); }
 }
 
-.shake {
-    animation: shake 0.4s ease;
-}
+.shake { animation: shake 0.4s ease; }
 
 @keyframes fadeUp {
     from { opacity: 0; transform: translateY(10px); }

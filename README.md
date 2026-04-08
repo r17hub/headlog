@@ -3,12 +3,11 @@
 Personal thought capture system. Runs on localhost with zero dependencies.
 
 ```
-python app.py
+ollama serve & python app.py
 ```
 
-
-// Stop everything (kills any process on ports 5959 and 7777)
+// Stop everything (kills Ollama + app ports)
 
 ```
-lsof -ti:5959,7777 | xargs kill -9 2>/dev/null; echo "stopped"
+lsof -ti:5959,7777,11434 | xargs kill -9 2>/dev/null; echo "stopped"
 ```
