@@ -51,6 +51,7 @@ const ActionList = {
       item.time_remaining_seconds -= 1;
       if (item.time_remaining_seconds <= 0 && item.urgency_state !== 'overdue') {
         item.urgency_state = 'overdue';
+        item.urgency = 'overdue';
         item.bucket = 'next_hours';
         needsRerender = true;
       }
@@ -136,6 +137,8 @@ const ActionList = {
         const deleteClass = isDeleteConfirm ? ' delete-confirming' : '';
         const deadlineText = item.deadline_label || 'open task';
         const showClock = item.time_remaining_seconds !== null && item.urgency_state !== 'open';
+        const urgencyTier = item.urgency || item.urgency_state;
+        const deadlineEmoji = urgencyTier === 'overdue' ? '🔥' : urgencyTier === 'critical' ? '⏳' : urgencyTier === 'soon' ? '📌' : urgencyTier === 'upcoming' ? '🗓️' : '';
         const countdownId = `countdown-${item.id}`;
         const tagHtml = (item.tags || []).slice(0, 2).map(t => `<span class="action-tag">${this.escapeHtml(t)}</span>`).join('');
         const editingDisabled = this.editingId && !isEditing ? ' disabled' : '';
@@ -148,14 +151,14 @@ const ActionList = {
                  <button class="inline-edit-btn-save" type="button" onclick="ActionList.saveEdit(${item.id})">Save</button>
                </div>
              </div>`
-          : `<div class="action-text">${this.escapeHtml(item.text)}</div>
+          : `<div class="action-text">${urgencyTier === 'overdue' ? '🔥 ' : ''}${this.escapeHtml(item.text)}</div>
              <div class="action-meta">
-               <span class="action-deadline">${showClock ? clockSvg : ''}<span id="${countdownId}">${showClock ? this.formatRemaining(item.time_remaining_seconds, item.urgency_state) : deadlineText}</span></span>
+               <span class="action-deadline">${deadlineEmoji ? deadlineEmoji + ' ' : (showClock ? clockSvg : '')}<span id="${countdownId}">${showClock ? this.formatRemaining(item.time_remaining_seconds, item.urgency_state) : deadlineText}</span></span>
                <span class="action-type">${item.item_type}</span>
                ${tagHtml}
              </div>`;
         html += `
-          <div class="action-item${collapsedClass}${editingClass}${deleteClass}" data-urgency="${item.urgency_state}" data-thought-id="${item.id}" id="action-${item.id}">
+          <div class="action-item${collapsedClass}${editingClass}${deleteClass}" data-urgency="${item.urgency || item.urgency_state}" data-thought-id="${item.id}" id="action-${item.id}">
             <button class="action-check" onclick="ActionList.complete(${item.id})" title="Mark done">${checkSvg}</button>
             <div class="action-body">
               ${textHtml}
@@ -173,7 +176,7 @@ const ActionList = {
       const listClass = this.doneExpanded ? '' : ' collapsed';
       html += `<div class="done-section">
         <div class="done-header" onclick="ActionList.toggleDone()">
-          <span class="done-label">Done today <span class="done-count-badge">${this.doneItems.length}</span></span>
+          <span class="done-label">Done today 🎉 <span class="done-count-badge">${this.doneItems.length}</span></span>
           <span class="done-chevron${chevClass}">&#9656;</span>
         </div>
         <div class="done-list${listClass}" id="done-list">

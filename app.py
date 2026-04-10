@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Headlog — personal thought capture system."""
 
+import calendar
 import json
 import mimetypes
 import os
@@ -313,6 +314,35 @@ def init_db():
     )
     conn.execute("CREATE INDEX IF NOT EXISTS idx_alarms_thought ON alarms(thought_id)")
 
+    # ── Routines tables ──────────────────────────────────────────
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS routines (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            thought_id INTEGER,
+            title TEXT NOT NULL,
+            schedule_type TEXT NOT NULL,
+            schedule_data TEXT NOT NULL DEFAULT '{}',
+            status TEXT NOT NULL DEFAULT 'active',
+            created_at TEXT NOT NULL,
+            paused_at TEXT,
+            archived_at TEXT,
+            FOREIGN KEY (thought_id) REFERENCES thoughts(id) ON DELETE SET NULL
+        )
+    """)
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_routines_status ON routines(status)")
+
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS routine_completions (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            routine_id INTEGER NOT NULL,
+            completed_date TEXT NOT NULL,
+            completed_at TEXT NOT NULL,
+            FOREIGN KEY (routine_id) REFERENCES routines(id) ON DELETE CASCADE,
+            UNIQUE(routine_id, completed_date)
+        )
+    """)
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_rc_routine_date ON routine_completions(routine_id, completed_date)")
+
     conn.execute("""
         CREATE VIRTUAL TABLE IF NOT EXISTS thoughts_fts USING fts5(
             text, tags,
@@ -599,6 +629,21 @@ def _time_greeting(now):
     if hour < 17:
         return "afternoon"
     return "evening"
+
+
+def _compute_urgency_tier(time_remaining_seconds, urgency_state):
+    """Map urgency to 4-tier system: overdue/critical/soon/upcoming/open."""
+    if urgency_state == "open":
+        return "open"
+    if urgency_state == "overdue" or (time_remaining_seconds is not None and time_remaining_seconds <= 0):
+        return "overdue"
+    if time_remaining_seconds is not None:
+        if time_remaining_seconds < 1800:   # < 30 min
+            return "critical"
+        if time_remaining_seconds < 21600:  # < 6 h
+            return "soon"
+        return "upcoming"
+    return "open"
 
 
 def _compute_urgency(thought, now, config):
@@ -1039,6 +1084,236 @@ def rebuild_journal_from_db():
     return len(days)
 
 
+# ── Routines ─────────────────────────────────────────────────────
+
+_DAY_NAMES = {
+    'monday': 0, 'mon': 0,
+    'tuesday': 1, 'tue': 1, 'tues': 1,
+    'wednesday': 2, 'wed': 2,
+    'thursday': 3, 'thu': 3, 'thur': 3, 'thurs': 3,
+    'friday': 4, 'fri': 4,
+    'saturday': 5, 'sat': 5,
+    'sunday': 6, 'sun': 6,
+}
+_DAY_ABBREVS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
+
+_DAY_NAME_RE = re.compile(
+    r'\b(' + '|'.join(re.escape(d) for d in _DAY_NAMES) + r')\b',
+    re.IGNORECASE,
+)
+
+
+def _clean_routine_title(text):
+    """Strip schedule-related phrases from text to get clean routine title."""
+    cleaned = text.strip()
+    day_alts = '|'.join(re.escape(d) for d in _DAY_NAMES)
+    cleaned = re.sub(
+        r'\s*\b(?:every|on)\s+(?:(?:' + day_alts + r')[\s,]*(?:and\s+)?)+',
+        '', cleaned, flags=re.IGNORECASE,
+    )
+    cleaned = re.sub(
+        r'\s*\b(?:every\s+(?:day|other\s+day|weekday|weekend|two\s+weeks|2\s+weeks|month|morning|evening|night)'
+        r'|daily|weekdays?|weekends?|biweekly|fortnightly|monthly)\b',
+        '', cleaned, flags=re.IGNORECASE,
+    )
+    cleaned = re.sub(
+        r'\s*\b(?:on\s+the\s+)?\d{1,2}(?:st|nd|rd|th)\s*(?:of\s+every\s+month)?\b',
+        '', cleaned, flags=re.IGNORECASE,
+    )
+    cleaned = re.sub(r'\s{2,}', ' ', cleaned).strip(' ,.-')
+    if cleaned and cleaned[0].islower():
+        cleaned = cleaned[0].upper() + cleaned[1:]
+    return cleaned if cleaned else text.strip()
+
+
+def parse_routine_schedule(text):
+    """Extract recurrence pattern from natural language text."""
+    lower = text.lower().strip()
+    today = datetime.now()
+
+    day_matches = _DAY_NAME_RE.findall(lower)
+    if day_matches:
+        days = sorted(set(_DAY_NAMES[d.lower()] for d in day_matches))
+        has_ctx = any(w in lower for w in ('every', 'on '))
+        if has_ctx or len(days) > 1:
+            return {
+                'title': _clean_routine_title(text),
+                'schedule_type': 'specific_days',
+                'schedule_data': {'days': days},
+            }
+
+    if re.search(r'\bdaily\b|\bevery\s*day\b|\beveryday\b', lower):
+        return {'title': _clean_routine_title(text), 'schedule_type': 'daily', 'schedule_data': {}}
+
+    if re.search(r'\bweekdays?\b|\bevery\s+weekday\b', lower):
+        return {'title': _clean_routine_title(text), 'schedule_type': 'weekdays', 'schedule_data': {}}
+
+    if re.search(r'\bweekends?\b|\bevery\s+weekend\b', lower):
+        return {'title': _clean_routine_title(text), 'schedule_type': 'weekends', 'schedule_data': {}}
+
+    if re.search(r'\bbiweekly\b|\bevery\s+(?:two|2)\s+weeks?\b|\bfortnightly\b', lower):
+        return {
+            'title': _clean_routine_title(text),
+            'schedule_type': 'interval',
+            'schedule_data': {'every_n_days': 14, 'anchor_date': today.strftime('%Y-%m-%d')},
+        }
+
+    if re.search(r'\bevery\s+other\s+day\b', lower):
+        return {
+            'title': _clean_routine_title(text),
+            'schedule_type': 'interval',
+            'schedule_data': {'every_n_days': 2, 'anchor_date': today.strftime('%Y-%m-%d')},
+        }
+
+    if re.search(r'\bmonthly\b|\bevery\s+month\b', lower):
+        return {
+            'title': _clean_routine_title(text),
+            'schedule_type': 'monthly',
+            'schedule_data': {'day_of_month': today.day},
+        }
+
+    ordinal = re.search(r'\b(?:on\s+the\s+)?(\d{1,2})(?:st|nd|rd|th)\s*(?:of\s+every\s+month)?\b', lower)
+    if ordinal:
+        dom = int(ordinal.group(1))
+        if 1 <= dom <= 31:
+            return {
+                'title': _clean_routine_title(text),
+                'schedule_type': 'monthly',
+                'schedule_data': {'day_of_month': dom},
+            }
+
+    return {'title': text.strip(), 'schedule_type': 'daily', 'schedule_data': {}}
+
+
+def _is_scheduled_on_date(schedule_type, schedule_data, check_date):
+    """Check if a routine is scheduled for a given date."""
+    wd = check_date.weekday()
+    if schedule_type == 'daily':
+        return True
+    if schedule_type == 'weekdays':
+        return wd < 5
+    if schedule_type == 'weekends':
+        return wd >= 5
+    if schedule_type == 'specific_days':
+        return wd in schedule_data.get('days', [])
+    if schedule_type == 'interval':
+        anchor = schedule_data.get('anchor_date')
+        every_n = schedule_data.get('every_n_days', 1)
+        if not anchor:
+            return True
+        anchor_date = datetime.strptime(anchor, '%Y-%m-%d').date()
+        diff = (check_date - anchor_date).days
+        return diff >= 0 and diff % every_n == 0
+    if schedule_type == 'monthly':
+        dom = schedule_data.get('day_of_month', 1)
+        last_day = calendar.monthrange(check_date.year, check_date.month)[1]
+        return check_date.day == min(dom, last_day)
+    return False
+
+
+def _get_schedule_label(schedule_type, schedule_data):
+    """Human-readable schedule label."""
+    if schedule_type == 'daily':
+        return 'Daily'
+    if schedule_type == 'weekdays':
+        return 'Weekdays'
+    if schedule_type == 'weekends':
+        return 'Weekends'
+    if schedule_type == 'specific_days':
+        days = schedule_data.get('days', [])
+        return ', '.join(_DAY_ABBREVS[d] for d in sorted(days))
+    if schedule_type == 'interval':
+        n = schedule_data.get('every_n_days', 1)
+        if n == 14:
+            return 'Every 2 weeks'
+        if n == 2:
+            return 'Every other day'
+        return f'Every {n} days'
+    if schedule_type == 'monthly':
+        dom = schedule_data.get('day_of_month', 1)
+        suffix = {1: 'st', 2: 'nd', 3: 'rd'}.get(dom if dom < 20 else dom % 10, 'th')
+        return f'Monthly ({dom}{suffix})'
+    return schedule_type
+
+
+def _get_last_n_scheduled_dates(schedule_type, schedule_data, n=7, ref_date=None):
+    """Get the last N scheduled dates (including ref_date), newest first."""
+    if ref_date is None:
+        ref_date = datetime.now().date()
+    dates = []
+    d = ref_date
+    limit = ref_date - timedelta(days=365)
+    while len(dates) < n and d >= limit:
+        if _is_scheduled_on_date(schedule_type, schedule_data, d):
+            dates.append(d)
+        d -= timedelta(days=1)
+    return dates
+
+
+def _compute_consistency(routine_id, schedule_type, schedule_data, conn, ref_date=None):
+    """Compute consistency dots and needs_attention flag."""
+    if ref_date is None:
+        ref_date = datetime.now().date()
+
+    scheduled_dates = _get_last_n_scheduled_dates(schedule_type, schedule_data, 7, ref_date)
+
+    if not scheduled_dates:
+        return [False] * 7, False, 0
+
+    date_strs = [d.strftime('%Y-%m-%d') for d in scheduled_dates]
+    placeholders = ','.join('?' for _ in date_strs)
+    rows = conn.execute(
+        f"SELECT completed_date FROM routine_completions "
+        f"WHERE routine_id = ? AND completed_date IN ({placeholders})",
+        [routine_id] + date_strs,
+    ).fetchall()
+    completed_set = {r['completed_date'] for r in rows}
+
+    dots = [d.strftime('%Y-%m-%d') in completed_set for d in scheduled_dates]
+
+    # needs_attention: 2+ consecutive misses before today
+    past_dates = _get_last_n_scheduled_dates(schedule_type, schedule_data, 3, ref_date - timedelta(days=1))
+    missed_consecutive = 0
+    for d in past_dates:
+        ds = d.strftime('%Y-%m-%d')
+        check = conn.execute(
+            "SELECT 1 FROM routine_completions WHERE routine_id = ? AND completed_date = ?",
+            (routine_id, ds),
+        ).fetchone()
+        if check:
+            break
+        missed_consecutive += 1
+
+    filled = sum(dots)
+    pct = round(filled / len(dots) * 100) if dots else 0
+
+    return dots, missed_consecutive >= 2, pct
+
+
+def save_routine(thought_id, title, schedule_type, schedule_data):
+    """Create a routine, or return existing if duplicate title."""
+    conn = get_db()
+    try:
+        existing = conn.execute(
+            "SELECT id FROM routines WHERE LOWER(title) = LOWER(?) AND status = 'active'",
+            (title,),
+        ).fetchone()
+        if existing:
+            return existing['id'], True
+
+        now_iso = datetime.now().strftime('%Y-%m-%dT%H:%M:%S')
+        schedule_json = json.dumps(schedule_data)
+        cur = conn.execute(
+            "INSERT INTO routines (thought_id, title, schedule_type, schedule_data, status, created_at) "
+            "VALUES (?, ?, ?, ?, 'active', ?)",
+            (thought_id, title, schedule_type, schedule_json, now_iso),
+        )
+        conn.commit()
+        return cur.lastrowid, False
+    finally:
+        conn.close()
+
+
 # ── Config ────────────────────────────────────────────────────────
 
 def _default_alarm_config():
@@ -1324,7 +1599,7 @@ def ai_enrich_tags(thought_id, text, existing_tags, date_key, created_at, expect
             "- Return ONLY tag names from the list above, comma-separated, nothing else\n"
             "- Suggest 1-3 tags that capture the MEANING, not just keywords\n"
             f"- Do NOT suggest tags that are already applied: {existing_str}\n"
-            "- Do NOT suggest: private_todo, private_reminder, random, p0, p1, p2\n"
+            "- Do NOT suggest: private_todo, private_reminder, routine, random, p0, p1, p2\n"
             "- If no additional tags are needed, return: none\n\n"
             f'Thought: "{text}"\n\n'
             "Tags:"
@@ -1340,6 +1615,7 @@ def ai_enrich_tags(thought_id, text, existing_tags, date_key, created_at, expect
             t for t in candidates
             if t in VALID_ENRICHMENT_TAGS and t not in existing_set
         ]
+        new_ai_tags = [t for t in new_ai_tags if t != "routine"]
         if not _allow_ai_action_tags(text):
             new_ai_tags = [t for t in new_ai_tags if t not in {"todo", "reminder"}]
         if not new_ai_tags:
@@ -1432,7 +1708,7 @@ def quick_ai_classify(text):
         "- Return ONLY comma-separated tag names, nothing else\n"
         "- For action items, tasks, or imperative sentences → todo\n"
         "- For time-bound items with deadlines → add reminder\n"
-        "- Do NOT suggest: private_todo, private_reminder, p0, p1, p2\n"
+        "- Do NOT suggest: private_todo, private_reminder, routine, p0, p1, p2\n"
         "- If genuinely uncategorizable → return: random\n\n"
         f'Note: "{text}"\n\nTags:'
     )
@@ -1442,7 +1718,7 @@ def quick_ai_classify(text):
         return None
 
     candidates = [t.strip().lower().rstrip(".") for t in raw.split(",")]
-    valid = [t for t in candidates if t in VALID_ENRICHMENT_TAGS]
+    valid = [t for t in candidates if t in VALID_ENRICHMENT_TAGS and t != "routine"]
     if not _allow_ai_action_tags(text):
         valid = [t for t in valid if t not in {"todo", "reminder"}]
     return valid or None
@@ -1837,6 +2113,10 @@ class APIHandler(SimpleHTTPRequestHandler):
                         is_todo = "todo" in tags or "private_todo" in tags
                         item_type = "reminder" if (is_reminder and not is_todo) else "todo"
 
+                        urgency_tier = _compute_urgency_tier(
+                            urgency.get("time_remaining_seconds"),
+                            urgency.get("urgency_state", "open"),
+                        )
                         items.append({
                             "id": thought["id"],
                             "text": "🔒 Private" if thought.get("is_private") else thought["text"],
@@ -1850,6 +2130,7 @@ class APIHandler(SimpleHTTPRequestHandler):
                             "item_type": item_type,
                             "pending_alarms": row["pending_alarms"],
                             "next_alarm_at": row["next_alarm_at"],
+                            "urgency": urgency_tier,
                             **urgency,
                         })
 
@@ -1981,6 +2262,105 @@ class APIHandler(SimpleHTTPRequestHandler):
             except Exception as e:
                 return self._json_response({"error": str(e)}, 500)
 
+        if path == "/api/routines/today":
+            try:
+                today = datetime.now().date()
+                today_str = today.strftime('%Y-%m-%d')
+                conn = get_db()
+                try:
+                    rows = conn.execute(
+                        "SELECT * FROM routines WHERE status = 'active'"
+                    ).fetchall()
+
+                    routines_out = []
+                    for row in rows:
+                        r = dict(row)
+                        sdata = json.loads(r['schedule_data']) if isinstance(r['schedule_data'], str) else r['schedule_data']
+                        if not _is_scheduled_on_date(r['schedule_type'], sdata, today):
+                            continue
+
+                        completed = conn.execute(
+                            "SELECT 1 FROM routine_completions WHERE routine_id = ? AND completed_date = ?",
+                            (r['id'], today_str),
+                        ).fetchone()
+
+                        dots, needs_att, pct = _compute_consistency(
+                            r['id'], r['schedule_type'], sdata, conn, today,
+                        )
+
+                        routines_out.append({
+                            'id': r['id'],
+                            'title': r['title'],
+                            'schedule_type': r['schedule_type'],
+                            'schedule_label': _get_schedule_label(r['schedule_type'], sdata),
+                            'completed_today': bool(completed),
+                            'consistency': dots,
+                            'needs_attention': needs_att,
+                            'consistency_pct': pct,
+                        })
+
+                    completed_count = sum(1 for r in routines_out if r['completed_today'])
+
+                    paused_rows = conn.execute(
+                        "SELECT * FROM routines WHERE status = 'paused' ORDER BY created_at DESC"
+                    ).fetchall()
+                    paused_out = []
+                    for pr in paused_rows:
+                        p = dict(pr)
+                        psdata = json.loads(p['schedule_data']) if isinstance(p['schedule_data'], str) else p['schedule_data']
+                        paused_out.append({
+                            'id': p['id'],
+                            'title': p['title'],
+                            'schedule_type': p['schedule_type'],
+                            'schedule_label': _get_schedule_label(p['schedule_type'], psdata),
+                        })
+
+                    return self._json_response({
+                        'routines': routines_out,
+                        'paused_routines': paused_out,
+                        'total_today': len(routines_out),
+                        'completed_today': completed_count,
+                    })
+                finally:
+                    conn.close()
+            except Exception as e:
+                return self._json_response({"error": str(e)}, 500)
+
+        if path == "/api/routines":
+            try:
+                conn = get_db()
+                try:
+                    rows = conn.execute(
+                        "SELECT * FROM routines ORDER BY created_at DESC"
+                    ).fetchall()
+                    routines_out = []
+                    for row in rows:
+                        r = dict(row)
+                        sdata = json.loads(r['schedule_data']) if isinstance(r['schedule_data'], str) else r['schedule_data']
+                        total_comp = conn.execute(
+                            "SELECT COUNT(*) as cnt FROM routine_completions WHERE routine_id = ?",
+                            (r['id'],),
+                        ).fetchone()['cnt']
+                        _, _, pct = _compute_consistency(
+                            r['id'], r['schedule_type'], sdata, conn,
+                        )
+                        routines_out.append({
+                            'id': r['id'],
+                            'title': r['title'],
+                            'schedule_type': r['schedule_type'],
+                            'schedule_data': sdata,
+                            'schedule_label': _get_schedule_label(r['schedule_type'], sdata),
+                            'status': r['status'],
+                            'created_at': r['created_at'],
+                            'consistency_pct': pct,
+                            'total_completions': total_comp,
+                        })
+                    return self._json_response({'routines': routines_out})
+                finally:
+                    conn.close()
+            except Exception as e:
+                return self._json_response({"error": str(e)}, 500)
+
         if path.startswith("/api/thoughts/"):
             try:
                 thought_id = int(path.split("/")[-1])
@@ -2004,6 +2384,24 @@ class APIHandler(SimpleHTTPRequestHandler):
     def do_DELETE(self):
         path = urlparse(self.path).path
 
+        m = re.match(r'^/api/routines/(\d+)$', path)
+        if m:
+            try:
+                routine_id = int(m.group(1))
+                conn = get_db()
+                try:
+                    r = conn.execute("SELECT id FROM routines WHERE id = ?", (routine_id,)).fetchone()
+                    if not r:
+                        return self._json_response({"error": "not found"}, 404)
+                    conn.execute("DELETE FROM routine_completions WHERE routine_id = ?", (routine_id,))
+                    conn.execute("DELETE FROM routines WHERE id = ?", (routine_id,))
+                    conn.commit()
+                finally:
+                    conn.close()
+                return self._json_response({"success": True})
+            except Exception as e:
+                return self._json_response({"error": str(e)}, 500)
+
         if path.startswith("/api/thoughts/"):
             try:
                 thought_id = int(path.split("/")[-1])
@@ -2022,6 +2420,69 @@ class APIHandler(SimpleHTTPRequestHandler):
 
     def do_PUT(self):
         path = urlparse(self.path).path
+
+        m = re.match(r'^/api/routines/(\d+)$', path)
+        if m:
+            try:
+                routine_id = int(m.group(1))
+                body = json.loads(self.rfile.read(int(self.headers.get("Content-Length", 0))))
+                conn = get_db()
+                try:
+                    row = conn.execute("SELECT * FROM routines WHERE id = ?", (routine_id,)).fetchone()
+                    if not row:
+                        return self._json_response({"error": "not found"}, 404)
+
+                    updates, params = [], []
+                    if 'title' in body:
+                        updates.append("title = ?")
+                        params.append(body['title'])
+                    if 'schedule_type' in body:
+                        updates.append("schedule_type = ?")
+                        params.append(body['schedule_type'])
+                    if 'schedule_data' in body:
+                        updates.append("schedule_data = ?")
+                        params.append(json.dumps(body['schedule_data']))
+                    if 'status' in body:
+                        new_status = body['status']
+                        updates.append("status = ?")
+                        params.append(new_status)
+                        now_iso = datetime.now().strftime('%Y-%m-%dT%H:%M:%S')
+                        if new_status == 'paused':
+                            updates.append("paused_at = ?")
+                            params.append(now_iso)
+                        elif new_status == 'archived':
+                            updates.append("archived_at = ?")
+                            params.append(now_iso)
+                        elif new_status == 'active':
+                            updates.append("paused_at = NULL")
+                            updates.append("archived_at = NULL")
+
+                    if updates:
+                        sql_set = ", ".join(updates)
+                        params.append(routine_id)
+                        conn.execute(f"UPDATE routines SET {sql_set} WHERE id = ?", params)
+                        conn.commit()
+
+                    updated = conn.execute("SELECT * FROM routines WHERE id = ?", (routine_id,)).fetchone()
+                    r = dict(updated)
+                    sdata = json.loads(r['schedule_data']) if isinstance(r['schedule_data'], str) else r['schedule_data']
+                    return self._json_response({
+                        'success': True,
+                        'routine': {
+                            'id': r['id'],
+                            'title': r['title'],
+                            'schedule_type': r['schedule_type'],
+                            'schedule_data': sdata,
+                            'schedule_label': _get_schedule_label(r['schedule_type'], sdata),
+                            'status': r['status'],
+                        },
+                    })
+                finally:
+                    conn.close()
+            except json.JSONDecodeError:
+                return self._json_response({"error": "invalid json"}, 400)
+            except Exception as e:
+                return self._json_response({"error": str(e)}, 500)
 
         if path.startswith("/api/thoughts/") and path.endswith("/edit"):
             try:
@@ -2091,15 +2552,81 @@ class APIHandler(SimpleHTTPRequestHandler):
                 except Exception as alarm_err:
                     print(f"Alarm generation failed: {alarm_err}")
 
-                self._json_response({
+                routine_id = None
+                routine_existed = False
+                if "routine" in final_tags:
+                    try:
+                        parsed_sched = parse_routine_schedule(text)
+                        # Frontend day selector takes priority over NLP parser
+                        frontend_sched = body.get("routine_schedule")
+                        if frontend_sched and isinstance(frontend_sched, dict):
+                            stype = frontend_sched.get("type", "daily")
+                            sdays = frontend_sched.get("days", [])
+                            if stype == "daily":
+                                parsed_sched["schedule_type"] = "daily"
+                                parsed_sched["schedule_data"] = {}
+                            elif stype == "weekdays":
+                                parsed_sched["schedule_type"] = "weekdays"
+                                parsed_sched["schedule_data"] = {}
+                            elif stype == "specific_days" and sdays:
+                                parsed_sched["schedule_type"] = "specific_days"
+                                parsed_sched["schedule_data"] = {"days": sdays}
+                        routine_id, routine_existed = save_routine(
+                            thought["id"],
+                            parsed_sched["title"],
+                            parsed_sched["schedule_type"],
+                            parsed_sched["schedule_data"],
+                        )
+                    except Exception as re_err:
+                        print(f"Routine creation failed: {re_err}")
+
+                resp = {
                     "thought": thought,
                     "auto_tags": [t for t in detected if t != "random"],
                     "manual_tags": manual_tags,
                     "alarm_count": alarm_count,
                     "alarm_zone": alarm_zone,
-                }, 201)
+                }
+                if routine_id is not None:
+                    resp["routine_id"] = routine_id
+                    resp["routine_existed"] = routine_existed
+
+                self._json_response(resp, 201)
                 maybe_enrich(thought)
                 return
+            except Exception as e:
+                return self._json_response({"error": str(e)}, 500)
+
+        m = re.match(r'^/api/routines/(\d+)/complete$', path)
+        if m:
+            try:
+                routine_id = int(m.group(1))
+                today_str = datetime.now().strftime('%Y-%m-%d')
+                conn = get_db()
+                try:
+                    r = conn.execute("SELECT id FROM routines WHERE id = ?", (routine_id,)).fetchone()
+                    if not r:
+                        return self._json_response({"error": "not found"}, 404)
+
+                    existing = conn.execute(
+                        "SELECT id FROM routine_completions WHERE routine_id = ? AND completed_date = ?",
+                        (routine_id, today_str),
+                    ).fetchone()
+
+                    if existing:
+                        conn.execute("DELETE FROM routine_completions WHERE id = ?", (existing['id'],))
+                        conn.commit()
+                        return self._json_response({"completed": False})
+                    else:
+                        now_iso = datetime.now().strftime('%Y-%m-%dT%H:%M:%S')
+                        conn.execute(
+                            "INSERT INTO routine_completions (routine_id, completed_date, completed_at) VALUES (?, ?, ?)",
+                            (routine_id, today_str, now_iso),
+                        )
+                        conn.commit()
+                        return self._json_response({"completed": True})
+                finally:
+                    conn.close()
             except Exception as e:
                 return self._json_response({"error": str(e)}, 500)
 

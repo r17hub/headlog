@@ -38,8 +38,14 @@
     --purple-soft: rgba(124, 95, 194, 0.08);
 
     /* ── Typography ───────────────────────────────────────── */
-    --font-serif: 'Source Serif 4', Georgia, 'Times New Roman', serif;
-    --font-sans: 'DM Sans', system-ui, -apple-system, sans-serif;
+    --font-serif: 'Capriola', system-ui, sans-serif;
+    --font-sans: 'Capriola', system-ui, sans-serif;
+    --font-brand: 'Capriola', system-ui, sans-serif;
+    --font-header: 'Bruno Ace SC', system-ui, sans-serif;
+    --font-content: 'Capriola', system-ui, sans-serif;
+    --font-data: 'Capriola', system-ui, sans-serif;
+    --font-personal: 'Capriola', system-ui, sans-serif;
+    --font-logo: 'Bruno Ace SC', system-ui, sans-serif;
 
     /* ── Radius ───────────────────────────────────────────── */
     --r-sm: 8px;
@@ -69,7 +75,7 @@
     --shadow-glow: 0 0 0 1px var(--border), var(--shadow-card);
 }
 
-html { font-size: 16px; }
+html { font-size: 17px; }
 
 body {
     font-family: var(--font-sans);

@@ -34,17 +34,17 @@
 }
 
 .logo-mark span {
-    font-family: var(--font-sans);
-    font-size: 15px;
-    font-weight: 700;
+    font-family: var(--font-logo);
+    font-size: 16px;
+    font-weight: 600;
     color: white;
 }
 
 .logo-text {
-    font-family: var(--font-sans);
-    font-size: 18px;
-    font-weight: 600;
-    letter-spacing: -0.3px;
+    font-family: var(--font-logo);
+    font-size: 20px;
+    font-weight: 400;
+    letter-spacing: 0px;
 }
 
 .tab-bar {
@@ -267,18 +267,18 @@
 }
 
 .upcoming-title {
-    font-family: var(--font-sans);
-    font-size: 11px;
-    font-weight: 600;
+    font-family: var(--font-header);
+    font-size: 14px;
+    font-weight: 400;
     text-transform: uppercase;
-    letter-spacing: 1.2px;
-    color: var(--text-dim);
+    letter-spacing: 1.5px;
+    color: #6B6A65;
 }
 
 .upcoming-count {
-    font-family: var(--font-sans);
+    font-family: var(--font-data);
     font-size: 10px;
-    font-weight: 600;
+    font-weight: 400;
     background: rgba(181, 82, 58, 0.08);
     color: var(--accent);
     padding: 2px 8px;
@@ -325,12 +325,12 @@
 /* ── Section dividers ── */
 
 .upcoming-section-label {
-    font-family: var(--font-sans);
-    font-size: 9px;
-    font-weight: 600;
+    font-family: var(--font-header);
+    font-size: 11px;
+    font-weight: 400;
     text-transform: uppercase;
-    letter-spacing: 0.8px;
-    color: var(--text-faint);
+    letter-spacing: 1.2px;
+    color: #6B6A65;
     padding: 12px 0 6px;
 }
 .upcoming-section-label:first-child {
@@ -357,20 +357,37 @@
     box-shadow: 0 2px 8px rgba(0,0,0,0.04);
 }
 
-/* Urgency border colors */
+/* Urgency border colors — 4-tier system */
 .action-item[data-urgency="overdue"] {
-    border-left-color: #E24B4A;
-    background: rgba(226, 75, 74, 0.03);
+    border-left-color: #C0392B;
+    background: #FFFAF9;
     animation: urgency-pulse 2.5s ease-in-out infinite;
 }
-.action-item[data-urgency="critical"] { border-left-color: #E24B4A; }
-.action-item[data-urgency="hot"]      { border-left-color: #D85A30; }
-.action-item[data-urgency="warming"]  { border-left-color: #EF9F27; }
-.action-item[data-urgency="calm"]     { border-left-color: #1D9E75; }
+.action-item[data-urgency="overdue"] .action-text { color: #A32D2D; }
+.action-item[data-urgency="overdue"] .action-deadline { background: rgba(163, 45, 45, 0.1); color: #A32D2D; }
+
+.action-item[data-urgency="critical"] {
+    border-left-color: #D97706;
+    background: #FFFDF8;
+}
+.action-item[data-urgency="critical"] .action-text { color: #8C4A1A; }
+.action-item[data-urgency="critical"] .action-deadline { background: rgba(140, 74, 26, 0.08); color: #8C4A1A; }
+
+.action-item[data-urgency="soon"] {
+    border-left-color: #D97706;
+}
+.action-item[data-urgency="soon"] .action-deadline { background: rgba(217, 119, 6, 0.08); color: #92400E; }
+
+.action-item[data-urgency="upcoming"] {
+    border-left-color: #97C459;
+}
+.action-item[data-urgency="upcoming"] .action-deadline { background: #EAF3DE; color: #3A6B15; }
+
 .action-item[data-urgency="open"]     { border-left-color: var(--border); }
+.action-item[data-urgency="open"] .action-deadline { background: rgba(0, 0, 0, 0.03); color: var(--text-dim); }
 
 @keyframes urgency-pulse {
-    0%, 100% { background: rgba(226, 75, 74, 0.03); }
+    0%, 100% { background: #FFFAF9; }
     50%      { background: rgba(226, 75, 74, 0.07); }
 }
 
@@ -400,8 +417,8 @@
 .action-body { flex: 1; min-width: 0; }
 
 .action-text {
-    font-family: var(--font-sans);
-    font-size: 12.5px;
+    font-family: var(--font-personal);
+    font-size: 13px;
     font-weight: 400;
     color: var(--text-primary);
     line-height: 1.4;
@@ -420,21 +437,15 @@
     display: inline-flex;
     align-items: center;
     gap: 3px;
-    font-family: var(--font-sans);
+    font-family: var(--font-data);
     font-size: 10px;
-    font-weight: 500;
+    font-weight: 400;
     padding: 2px 7px;
     border-radius: 5px;
     white-space: nowrap;
 }
 
-/* Deadline chip urgency colors */
-[data-urgency="overdue"]  .action-deadline { background: rgba(226, 75, 74, 0.08); color: #971c1c; }
-[data-urgency="critical"] .action-deadline { background: rgba(226, 75, 74, 0.07); color: #971c1c; }
-[data-urgency="hot"]      .action-deadline { background: rgba(216, 90, 48, 0.07); color: #8a3515; }
-[data-urgency="warming"]  .action-deadline { background: rgba(239, 159, 39, 0.08); color: #6b4008; }
-[data-urgency="calm"]     .action-deadline { background: rgba(29, 158, 117, 0.06); color: #0d5e46; }
-[data-urgency="open"]     .action-deadline { background: rgba(0, 0, 0, 0.03); color: var(--text-dim); }
+/* Deadline chip urgency colors (cascaded in the urgency block above) */
 
 /* Type + tag labels */
 .action-type {
@@ -500,12 +511,12 @@
 }
 .done-header:hover { opacity: 0.7; }
 .done-label {
-    font-family: var(--font-sans);
-    font-size: 9px;
-    font-weight: 600;
+    font-family: var(--font-header);
+    font-size: 11px;
+    font-weight: 400;
     text-transform: uppercase;
-    letter-spacing: 0.8px;
-    color: var(--text-faint);
+    letter-spacing: 1.2px;
+    color: #6B6A65;
     display: flex;
     align-items: center;
     gap: 6px;
@@ -545,9 +556,9 @@
 }
 .done-item:hover { opacity: 0.55; }
 .done-item .action-text {
-    font-family: var(--font-sans);
-    font-size: 11px;
-    color: var(--text-mid);
+    font-family: var(--font-personal);
+    font-size: 12px;
+    color: #7AB537;
     text-decoration: line-through;
 }
 .done-item .done-time {
@@ -652,12 +663,12 @@
 }
 
 .ask-header {
-    font-family: var(--font-sans);
-    font-size: 11px;
-    font-weight: 600;
+    font-family: var(--font-header);
+    font-size: 14px;
+    font-weight: 400;
     text-transform: uppercase;
-    letter-spacing: 1.2px;
-    color: var(--text-dim);
+    letter-spacing: 1.5px;
+    color: #6B6A65;
     margin-bottom: 12px;
     display: flex;
     align-items: center;
@@ -679,6 +690,7 @@
     flex-shrink: 0;
 }
 .ask-input::placeholder {
+    font-family: var(--font-personal);
     color: var(--text-faint);
     font-size: 11.5px;
 }
@@ -722,9 +734,9 @@
 }
 
 .ask-hint {
-    font-family: var(--font-sans);
+    font-family: var(--font-data);
     font-size: 9.5px;
-    color: var(--text-faint);
+    color: #9A9790;
     margin-top: 10px;
 }
 

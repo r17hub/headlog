@@ -9,10 +9,10 @@
     <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='6' fill='%23B5542A'/><text x='16' y='23' text-anchor='middle' font-family='system-ui,sans-serif' font-size='18' font-weight='700' fill='white'>h</text></svg>">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600;700&family=Source+Serif+4:ital,wght@0,300;0,400;0,500;0,600;1,400&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="/css/base.css?v=redesign-2">
-    <link rel="stylesheet" href="/css/components.css?v=redesign-2">
-    <link rel="stylesheet" href="/css/pages.css?v=redesign-2">
+    <link href="https://fonts.googleapis.com/css2?family=Bruno+Ace+SC&family=Capriola&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/css/base.css?v=redesign-3">
+    <link rel="stylesheet" href="/css/components.css?v=redesign-3">
+    <link rel="stylesheet" href="/css/pages.css?v=redesign-3">
 </head>
 <body>
 
@@ -85,6 +85,19 @@
                         <button id="chipsToggle" class="tag-picker-toggle" type="button">+4 more</button>
                     </div>
 
+                    <div class="routine-day-selector" id="routineDaySelector">
+                        <button class="routine-ds-daily active" type="button" id="routineDsDaily" onclick="toggleRoutineDaily()">Daily</button>
+                        <div class="routine-ds-days" id="routineDsDays">
+                            <button class="routine-ds-day" type="button" data-day="0" onclick="toggleRoutineDay(0)">M</button>
+                            <button class="routine-ds-day" type="button" data-day="1" onclick="toggleRoutineDay(1)">T</button>
+                            <button class="routine-ds-day" type="button" data-day="2" onclick="toggleRoutineDay(2)">W</button>
+                            <button class="routine-ds-day" type="button" data-day="3" onclick="toggleRoutineDay(3)">T</button>
+                            <button class="routine-ds-day" type="button" data-day="4" onclick="toggleRoutineDay(4)">F</button>
+                            <button class="routine-ds-day" type="button" data-day="5" onclick="toggleRoutineDay(5)">S</button>
+                            <button class="routine-ds-day" type="button" data-day="6" onclick="toggleRoutineDay(6)">S</button>
+                        </div>
+                    </div>
+
                     <div class="capture-footer">
                         <div class="capture-meta">
                             <span id="wordCount">0 words</span>
@@ -92,6 +105,14 @@
                         </div>
                         <button id="saveBtn" class="save-btn" type="button">Save Thought</button>
                     </div>
+                </div>
+
+                <div id="routinesStrip" class="routines-strip" style="display:none">
+                    <div class="routines-header">
+                        <span class="routines-title">Today's Routines</span>
+                        <span class="routines-count" id="routines-count"></span>
+                    </div>
+                    <div class="routines-scroll" id="routines-scroll"></div>
                 </div>
             </div>
 
@@ -198,6 +219,17 @@
         </div>
 
         <div class="settings-section">
+            <div class="settings-section-title">Routines</div>
+            <div id="routinesManage" class="routines-manage">
+                <div id="routinesManageList" class="routines-manage-list"></div>
+                <div id="routinesManageEmpty" class="routines-manage-empty">No routines yet. Add one by tagging a thought with #routine.</div>
+                <label class="routines-show-archived" id="routinesShowArchivedLabel" style="display:none">
+                    <input type="checkbox" id="routinesShowArchived"> Show archived
+                </label>
+            </div>
+        </div>
+
+        <div class="settings-section">
             <div class="settings-section-title">Data</div>
             <div class="settings-row" style="padding:16px">
                 <div id="statsDisplay" class="stats-display"></div>
@@ -216,7 +248,7 @@
     <script src="/js/shared/inline-edit.js"></script>
     <script src="/js/shared/swipe-dismiss.js"></script>
     <script src="/js/shared/urgency.js"></script>
-    <script src="/js/capture-actions.js?v=redesign-3"></script>
+    <script src="/js/capture-actions.js?v=redesign-4"></script>
     <script src="/js/app.js"></script>
 </body>
 </html>

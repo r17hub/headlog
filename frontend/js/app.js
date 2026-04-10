@@ -50,6 +50,8 @@ let toastTimeout = null;
 const peekTimers = {};
 let selectedPriority = null;
 let markImportant = false;
+let routineDailyMode = true;
+let routineSelectedDays = [];
 
 const starredIds = new Set(
     JSON.parse(localStorage.getItem('headlog_starred') || '[]')
@@ -230,14 +232,14 @@ let currentSuggestion = null;
 
 function extractTagFragment(text, cursorPos) {
     const before = text.slice(0, cursorPos);
-    const hashMatch = before.match(/#([a-z_]*)$/);
+    const hashMatch = before.match(/#([a-zA-Z_]*)$/);
     if (!hashMatch) return null;
 
-    const partial = hashMatch[1];
+    const partial = hashMatch[1].toLowerCase();
     const hashIndex = before.length - hashMatch[0].length;
 
     if (hashIndex > 0 && !/\s/.test(text[hashIndex - 1])) return null;
-    if (partial.length === 0) return null;
+    if (partial.length < 2) return null;
 
     return { partial, hashIndex };
 }
@@ -247,7 +249,7 @@ function findBestMatch(partial) {
     const matches = TAG_LABELS
         .filter(label => label.startsWith(partial) && !selected.has(label));
     if (matches.length === 0) return null;
-    matches.sort((a, b) => a.length - b.length);
+    matches.sort((a, b) => a.localeCompare(b));
     return matches[0];
 }
 
@@ -322,12 +324,14 @@ function activateChipFromAutocomplete(label) {
     }
 
     chipEl.classList.add('selected');
+    applyTagChipStyles(chipEl);
     chipEl.classList.add('just-activated');
     chipEl.addEventListener('animationend', () => {
         chipEl.classList.remove('just-activated');
     }, { once: true });
 
     appendTagToTextarea(label);
+    if (label === 'routine') showRoutineDaySelector();
 }
 
 
@@ -398,7 +402,69 @@ function resetPriorityButtons() {
 }
 
 
-/* ── Section 5b: Pin Toggle ───────────────────────────────────── */
+/* ── Section 5b: Routine Day Selector ────────────────────────── */
+
+function showRoutineDaySelector() {
+    document.getElementById('routineDaySelector')?.classList.add('visible');
+}
+
+function hideRoutineDaySelector() {
+    document.getElementById('routineDaySelector')?.classList.remove('visible');
+}
+
+function toggleRoutineDaily() {
+    routineDailyMode = !routineDailyMode;
+    if (routineDailyMode) routineSelectedDays = [];
+    updateRoutineDaySelectorUI();
+}
+
+function toggleRoutineDay(dayIndex) {
+    routineDailyMode = false;
+    const idx = routineSelectedDays.indexOf(dayIndex);
+    if (idx !== -1) {
+        routineSelectedDays.splice(idx, 1);
+    } else {
+        routineSelectedDays.push(dayIndex);
+    }
+    // Auto-switch to Daily if all 7 selected or none selected
+    if (routineSelectedDays.length === 0 || routineSelectedDays.length === 7) {
+        routineDailyMode = true;
+        routineSelectedDays = [];
+    }
+    updateRoutineDaySelectorUI();
+}
+
+function updateRoutineDaySelectorUI() {
+    const dailyBtn = document.getElementById('routineDsDaily');
+    if (dailyBtn) dailyBtn.classList.toggle('active', routineDailyMode);
+
+    document.querySelectorAll('.routine-ds-day').forEach(btn => {
+        const day = parseInt(btn.dataset.day, 10);
+        const sel = !routineDailyMode && routineSelectedDays.includes(day);
+        btn.classList.toggle('selected', sel);
+        btn.classList.toggle('dimmed', routineDailyMode);
+        btn.style.pointerEvents = routineDailyMode ? 'none' : '';
+    });
+}
+
+function resetRoutineDaySelector() {
+    routineDailyMode = true;
+    routineSelectedDays = [];
+    hideRoutineDaySelector();
+    updateRoutineDaySelectorUI();
+}
+
+function getRoutineSchedule() {
+    if (routineDailyMode) {
+        return { type: 'daily', days: [] };
+    }
+    if (routineSelectedDays.length === 5 &&
+        [0,1,2,3,4].every(d => routineSelectedDays.includes(d))) {
+        return { type: 'weekdays', days: [] };
+    }
+    return { type: 'specific_days', days: [...routineSelectedDays].sort() };
+}
+
 
 function initPinToggle() {
     const pinBtn = document.getElementById('pinToggle');
@@ -432,6 +498,7 @@ async function saveThought() {
         const postBody = { text, tags };
         if (priority) postBody.priority = priority;
         if (markImportant) postBody.important = true;
+        if (tags.includes('routine')) postBody.routine_schedule = getRoutineSchedule();
 
         const res = await fetch(`${API}/api/thoughts`, {
             method: 'POST',
@@ -457,6 +524,7 @@ async function saveThought() {
             c.classList.remove('selected');
             applyTagChipStyles(c);
         });
+        resetRoutineDaySelector();
 
         const extra = document.getElementById('chipsExtra');
         if (extra && extra.classList.contains('expanded')) {
@@ -466,7 +534,11 @@ async function saveThought() {
         }
 
         const tagStr = data.thought.tags.map(t => `#${t}`).join(', ');
-        showToast(`Saved — ${tagStr}`);
+        if (data.routine_existed) {
+            showToast('Routine already exists');
+        } else {
+            showToast(`Saved — ${tagStr}`);
+        }
 
         textarea.focus();
         if (window.ActionList && typeof ActionList.poll === 'function') {
@@ -474,6 +546,7 @@ async function saveThought() {
         }
         loadSidePanels();
         loadRecentThoughts();
+        loadRoutines();
     } catch (e) {
         showToast(`Error: ${e.message}`);
     }
@@ -850,6 +923,616 @@ function renderRecentThoughts() {
             <div class="recent-thought-text">${escapeHtml(t.text)}</div>
         </div>`;
     }).join('');
+}
+
+
+/* ── Section 13b: Routines Strip ──────────────────────────────── */
+
+let routinesPollTimer = null;
+
+async function loadRoutines() {
+    try {
+        const res = await fetch(`${API}/api/routines/today`);
+        const data = await res.json();
+        renderRoutinesStrip(data);
+    } catch (_) {}
+}
+
+function renderRoutinesStrip(data) {
+    const strip = document.getElementById('routinesStrip');
+    const scroll = document.getElementById('routines-scroll');
+    const countEl = document.getElementById('routines-count');
+    if (!strip || !scroll) return;
+
+    const routines = data.routines || [];
+    const pausedRoutines = data.paused_routines || [];
+
+    if (routines.length === 0 && pausedRoutines.length === 0) {
+        strip.style.display = 'none';
+        return;
+    }
+
+    strip.style.display = '';
+    countEl.innerHTML = `<span style="color:#B5523A;font-weight:600">${data.completed_today}</span><span style="color:var(--text-faint)">/${data.total_today}</span>`;
+
+    scroll.innerHTML = routines.map(r => renderRoutineCard(r)).join('');
+
+    // Paused section
+    let pausedContainer = document.getElementById('routinesPausedContainer');
+    if (!pausedContainer) {
+        pausedContainer = document.createElement('div');
+        pausedContainer.id = 'routinesPausedContainer';
+        strip.appendChild(pausedContainer);
+    }
+
+    if (pausedRoutines.length > 0) {
+        const noun = pausedRoutines.length === 1 ? 'paused routine' : 'paused routines';
+        pausedContainer.innerHTML = `
+            <div class="routines-paused-toggle" id="pausedRoutinesToggle" onclick="togglePausedRoutines()">⏸ ${pausedRoutines.length} ${noun}</div>
+            <div id="pausedRoutinesSection" style="display:none">
+                <div class="routines-paused-grid">${pausedRoutines.map(r => renderPausedRoutineCard(r)).join('')}</div>
+            </div>`;
+    } else {
+        pausedContainer.innerHTML = '';
+    }
+}
+
+function renderRoutineCard(r) {
+    const completedClass = r.completed_today ? ' completed' : '';
+    const attentionClass = (!r.completed_today && r.needs_attention) ? ' needs-attention' : '';
+    const checkIcon = r.completed_today
+        ? '<svg width="12" height="12" viewBox="0 0 12 12"><path d="M2.5 6.5L4.5 8.5L9.5 3.5" stroke="#fff" stroke-width="1.8" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>'
+        : '';
+    const dots = (r.consistency || []).slice().reverse().map(filled =>
+        `<div class="routine-dot${filled ? ' filled' : ''}"></div>`
+    ).join('');
+    const titleEmoji = r.completed_today ? '✅ ' : (r.needs_attention ? '😤 ' : '');
+
+    return `<div class="routine-card${completedClass}${attentionClass}" data-routine-id="${r.id}" onclick="handleRoutineCardClick(event,${r.id},this)">
+        <button class="routine-card-menu-btn" type="button" title="Options" onclick="event.stopPropagation();openRoutineMenu(${r.id},this,false)">···</button>
+        <div class="routine-card-menu" id="routine-menu-${r.id}" style="display:none"></div>
+        <div class="routine-card-top">
+            <div class="routine-card-check">${checkIcon}</div>
+            <div class="routine-card-info">
+                <div class="routine-card-title">${titleEmoji}${escapeHtml(r.title)}</div>
+                <div class="routine-card-schedule">${escapeHtml(r.schedule_label)}</div>
+            </div>
+        </div>
+        <div class="routine-dots">${dots}</div>
+    </div>`;
+}
+
+function renderPausedRoutineCard(r) {
+    return `<div class="routine-card routine-card-paused" data-routine-id="${r.id}">
+        <button class="routine-card-menu-btn" type="button" title="Options" onclick="event.stopPropagation();openRoutineMenu(${r.id},this,true)" style="pointer-events:all">···</button>
+        <div class="routine-card-menu" id="routine-menu-${r.id}" style="display:none"></div>
+        <div class="routine-card-top">
+            <div class="routine-card-check"></div>
+            <div class="routine-card-info">
+                <div class="routine-card-title">${escapeHtml(r.title)}</div>
+                <div class="routine-card-schedule paused-label">Paused</div>
+            </div>
+        </div>
+    </div>`;
+}
+
+async function toggleRoutineComplete(routineId, cardEl) {
+    const wasCompleted = cardEl.classList.contains('completed');
+    cardEl.classList.toggle('completed');
+    const checkEl = cardEl.querySelector('.routine-card-check');
+    if (wasCompleted) {
+        checkEl.innerHTML = '';
+    } else {
+        checkEl.innerHTML = '<svg width="12" height="12" viewBox="0 0 12 12"><path d="M2.5 6.5L4.5 8.5L9.5 3.5" stroke="#fff" stroke-width="1.8" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+    }
+
+    try {
+        const res = await fetch(`${API}/api/routines/${routineId}/complete`, { method: 'POST' });
+        if (!res.ok) throw new Error('Failed');
+        const data = await res.json();
+        if (data.completed === wasCompleted) {
+            cardEl.classList.toggle('completed');
+            if (wasCompleted) {
+                checkEl.innerHTML = '<svg width="12" height="12" viewBox="0 0 12 12"><path d="M2.5 6.5L4.5 8.5L9.5 3.5" stroke="#fff" stroke-width="1.8" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+            } else {
+                checkEl.innerHTML = '';
+            }
+        }
+        loadRoutines();
+    } catch (_) {
+        cardEl.classList.toggle('completed');
+        if (wasCompleted) {
+            checkEl.innerHTML = '<svg width="12" height="12" viewBox="0 0 12 12"><path d="M2.5 6.5L4.5 8.5L9.5 3.5" stroke="#fff" stroke-width="1.8" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+        } else {
+            checkEl.innerHTML = '';
+        }
+    }
+}
+
+function startRoutinePolling() {
+    if (routinesPollTimer) clearInterval(routinesPollTimer);
+    loadRoutines();
+    routinesPollTimer = setInterval(loadRoutines, 60000);
+}
+
+
+/* ── Section 13b-2: Routine Card Management ──────────────────── */
+
+let _openRoutineMenuId = null;
+
+function handleRoutineCardClick(e, routineId, cardEl) {
+    const menuBtn = cardEl.querySelector('.routine-card-menu-btn');
+    const menu = document.getElementById(`routine-menu-${routineId}`);
+    if (menuBtn && menuBtn.contains(e.target)) return;
+    if (menu && menu.contains(e.target)) return;
+    if (cardEl.classList.contains('routine-card-editing')) return;
+    toggleRoutineComplete(routineId, cardEl);
+}
+
+function openRoutineMenu(routineId, btn, isPaused) {
+    if (_openRoutineMenuId && _openRoutineMenuId !== routineId) {
+        const prev = document.getElementById(`routine-menu-${_openRoutineMenuId}`);
+        if (prev) prev.style.display = 'none';
+    }
+
+    const menu = document.getElementById(`routine-menu-${routineId}`);
+    if (!menu) return;
+
+    if (menu.style.display !== 'none') {
+        menu.style.display = 'none';
+        _openRoutineMenuId = null;
+        return;
+    }
+
+    _openRoutineMenuId = routineId;
+    menu.innerHTML = isPaused ? _pausedRoutineMenuHtml(routineId) : _activeRoutineMenuHtml(routineId);
+    menu.style.display = 'block';
+
+    setTimeout(() => {
+        document.addEventListener('click', _closeRoutineMenuOutside, { once: true });
+    }, 0);
+}
+
+function _closeRoutineMenuOutside(e) {
+    if (_openRoutineMenuId === null) return;
+    const menu = document.getElementById(`routine-menu-${_openRoutineMenuId}`);
+    const btn = document.querySelector(`.routine-card[data-routine-id="${_openRoutineMenuId}"] .routine-card-menu-btn`);
+    if (menu && !menu.contains(e.target) && btn && !btn.contains(e.target)) {
+        menu.style.display = 'none';
+        _openRoutineMenuId = null;
+    }
+}
+
+function _activeRoutineMenuHtml(id) {
+    return `<div class="routine-menu-item" onclick="event.stopPropagation();routineCardPause(${id})">⏸ Pause</div>
+        <div class="routine-menu-item" onclick="event.stopPropagation();routineCardStartEdit(${id})">✏️ Edit schedule</div>
+        <div class="routine-menu-divider"></div>
+        <div class="routine-menu-item routine-menu-delete" onclick="event.stopPropagation();routineCardDeleteConfirm(${id})">🗑 Delete</div>`;
+}
+
+function _pausedRoutineMenuHtml(id) {
+    return `<div class="routine-menu-item routine-menu-resume" onclick="event.stopPropagation();routineCardResume(${id})">▶ Resume</div>
+        <div class="routine-menu-divider"></div>
+        <div class="routine-menu-item routine-menu-delete" onclick="event.stopPropagation();routineCardDeleteConfirm(${id})">🗑 Delete</div>`;
+}
+
+function _deleteConfirmMenuHtml(id) {
+    return `<div class="routine-menu-confirm-text">Delete this routine? Your history will be lost.</div>
+        <div class="routine-menu-confirm-btns">
+            <button class="routine-menu-cancel-btn" onclick="event.stopPropagation();routineCardCancelDelete(${id})">Cancel</button>
+            <button class="routine-menu-delete-btn" onclick="event.stopPropagation();routineCardDelete(${id})">Delete</button>
+        </div>`;
+}
+
+async function routineCardPause(routineId) {
+    const card = document.querySelector(`.routine-card[data-routine-id="${routineId}"]`);
+    const rawTitle = card?.querySelector('.routine-card-title')?.textContent || 'Routine';
+    const title = rawTitle.replace(/^[✅😤]\s/, '');
+    const menu = document.getElementById(`routine-menu-${routineId}`);
+    if (menu) menu.style.display = 'none';
+    _openRoutineMenuId = null;
+
+    try {
+        const res = await fetch(`${API}/api/routines/${routineId}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ status: 'paused' }),
+        });
+        if (!res.ok) throw new Error('Failed');
+        if (card) {
+            card.style.transition = 'opacity 0.25s, transform 0.25s';
+            card.style.opacity = '0';
+            card.style.transform = 'scale(0.95)';
+        }
+        setTimeout(() => loadRoutines(), 260);
+        showToast(`"${title}" paused`);
+    } catch (e) {
+        showToast(`Error: ${e.message}`);
+    }
+}
+
+async function routineCardResume(routineId) {
+    const card = document.querySelector(`.routine-card[data-routine-id="${routineId}"]`);
+    const title = card?.querySelector('.routine-card-title')?.textContent || 'Routine';
+    const menu = document.getElementById(`routine-menu-${routineId}`);
+    if (menu) menu.style.display = 'none';
+    _openRoutineMenuId = null;
+
+    try {
+        const res = await fetch(`${API}/api/routines/${routineId}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ status: 'active' }),
+        });
+        if (!res.ok) throw new Error('Failed');
+        loadRoutines();
+        showToast(`"${title}" resumed`);
+    } catch (e) {
+        showToast(`Error: ${e.message}`);
+    }
+}
+
+function routineCardDeleteConfirm(routineId) {
+    const menu = document.getElementById(`routine-menu-${routineId}`);
+    if (!menu) return;
+    menu.innerHTML = _deleteConfirmMenuHtml(routineId);
+}
+
+function routineCardCancelDelete(routineId) {
+    const card = document.querySelector(`.routine-card[data-routine-id="${routineId}"]`);
+    const isPaused = card?.classList.contains('routine-card-paused');
+    const menu = document.getElementById(`routine-menu-${routineId}`);
+    if (!menu) return;
+    menu.innerHTML = isPaused ? _pausedRoutineMenuHtml(routineId) : _activeRoutineMenuHtml(routineId);
+}
+
+async function routineCardDelete(routineId) {
+    const card = document.querySelector(`.routine-card[data-routine-id="${routineId}"]`);
+    const rawTitle = card?.querySelector('.routine-card-title')?.textContent || 'Routine';
+    const title = rawTitle.replace(/^[✅😤]\s/, '');
+    const menu = document.getElementById(`routine-menu-${routineId}`);
+    if (menu) menu.style.display = 'none';
+    _openRoutineMenuId = null;
+
+    try {
+        const res = await fetch(`${API}/api/routines/${routineId}`, { method: 'DELETE' });
+        if (!res.ok) throw new Error('Delete failed');
+        if (card) {
+            card.style.transition = 'opacity 0.25s, transform 0.25s';
+            card.style.opacity = '0';
+            card.style.transform = 'scale(0.95)';
+        }
+        setTimeout(() => loadRoutines(), 260);
+        showToast(`"${title}" deleted`);
+    } catch (e) {
+        showToast(`Error: ${e.message}`);
+    }
+}
+
+function routineCardStartEdit(routineId) {
+    const menu = document.getElementById(`routine-menu-${routineId}`);
+    if (menu) menu.style.display = 'none';
+    _openRoutineMenuId = null;
+
+    const card = document.querySelector(`.routine-card[data-routine-id="${routineId}"]`);
+    if (!card) return;
+
+    const rawTitle = card.querySelector('.routine-card-title')?.textContent || '';
+    const currentTitle = rawTitle.replace(/^[✅😤]\s/, '');
+    const scheduleEl = card.querySelector('.routine-card-schedule');
+    const scheduleLabel = scheduleEl?.textContent || '';
+
+    card.classList.add('routine-card-editing');
+    card.setAttribute('onclick', '');
+
+    // Init inline state based on schedule label heuristic (will default to daily)
+    _inlineEditState[routineId] = { daily: true, days: [] };
+
+    card.innerHTML = _renderInlineEditForm(routineId, currentTitle);
+    _updateInlineDayUI(routineId);
+
+    const input = document.getElementById(`riet-${routineId}`);
+    if (input) { input.focus(); input.select(); }
+}
+
+const _inlineEditState = {};
+
+function _renderInlineEditForm(id, title) {
+    const days = ['M','T','W','T','F','S','S'];
+    return `<div class="routine-inline-edit" onclick="event.stopPropagation()">
+        <input class="routine-inline-title" id="riet-${id}" type="text" value="${escapeAttr(title)}" placeholder="Routine name">
+        <div class="routine-inline-ds">
+            <button class="routine-inline-daily active" type="button" id="rield-${id}" onclick="event.stopPropagation();toggleInlineDaily(${id})">Daily</button>
+            <div id="rieldays-${id}" style="display:flex;gap:3px">
+                ${days.map((d,i) => `<button class="routine-inline-day" type="button" data-day="${i}" onclick="event.stopPropagation();toggleInlineDay(${id},${i})">${d}</button>`).join('')}
+            </div>
+        </div>
+        <div class="routine-inline-btns">
+            <button class="routine-inline-cancel" type="button" onclick="event.stopPropagation();routineCardCancelEdit(${id})">Cancel</button>
+            <button class="routine-inline-save" type="button" onclick="event.stopPropagation();routineCardSaveEdit(${id})">Save</button>
+        </div>
+    </div>`;
+}
+
+function toggleInlineDaily(id) {
+    if (!_inlineEditState[id]) _inlineEditState[id] = { daily: true, days: [] };
+    const s = _inlineEditState[id];
+    s.daily = !s.daily;
+    if (s.daily) s.days = [];
+    _updateInlineDayUI(id);
+}
+
+function toggleInlineDay(id, dayIndex) {
+    if (!_inlineEditState[id]) _inlineEditState[id] = { daily: false, days: [] };
+    const s = _inlineEditState[id];
+    s.daily = false;
+    const idx = s.days.indexOf(dayIndex);
+    if (idx !== -1) { s.days.splice(idx, 1); } else { s.days.push(dayIndex); }
+    if (s.days.length === 0 || s.days.length === 7) { s.daily = true; s.days = []; }
+    _updateInlineDayUI(id);
+}
+
+function _updateInlineDayUI(id) {
+    const s = _inlineEditState[id] || { daily: true, days: [] };
+    const dailyBtn = document.getElementById(`rield-${id}`);
+    const daysEl = document.getElementById(`rieldays-${id}`);
+    if (!dailyBtn || !daysEl) return;
+    dailyBtn.classList.toggle('active', s.daily);
+    daysEl.querySelectorAll('.routine-inline-day').forEach(btn => {
+        const day = parseInt(btn.dataset.day, 10);
+        btn.classList.toggle('selected', !s.daily && s.days.includes(day));
+        btn.classList.toggle('dimmed', s.daily);
+        btn.style.pointerEvents = s.daily ? 'none' : '';
+    });
+}
+
+function routineCardCancelEdit(routineId) {
+    delete _inlineEditState[routineId];
+    loadRoutines();
+}
+
+async function routineCardSaveEdit(routineId) {
+    const input = document.getElementById(`riet-${routineId}`);
+    const title = input ? input.value.trim() : '';
+    if (!title) { showToast('Title cannot be empty'); return; }
+
+    const s = _inlineEditState[routineId] || { daily: true, days: [] };
+    let scheduleType, scheduleData = {};
+    if (s.daily) {
+        scheduleType = 'daily';
+    } else if (s.days.length === 5 && [0,1,2,3,4].every(d => s.days.includes(d))) {
+        scheduleType = 'weekdays';
+    } else if (s.days.length === 2 && [5,6].every(d => s.days.includes(d))) {
+        scheduleType = 'weekends';
+    } else {
+        scheduleType = 'specific_days';
+        scheduleData = { days: [...s.days].sort((a,b)=>a-b) };
+    }
+
+    try {
+        const res = await fetch(`${API}/api/routines/${routineId}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ title, schedule_type: scheduleType, schedule_data: scheduleData }),
+        });
+        if (!res.ok) throw new Error('Update failed');
+        delete _inlineEditState[routineId];
+        loadRoutines();
+        showToast('Routine updated');
+    } catch (e) {
+        showToast(`Error: ${e.message}`);
+    }
+}
+
+function togglePausedRoutines() {
+    const section = document.getElementById('pausedRoutinesSection');
+    const toggle = document.getElementById('pausedRoutinesToggle');
+    if (!section) return;
+    const isHidden = section.style.display === 'none' || !section.style.display;
+    section.style.display = isHidden ? 'block' : 'none';
+    if (toggle) toggle.classList.toggle('expanded', isHidden);
+}
+
+
+/* ── Section 13c: Routines Management (Settings) ─────────────── */
+
+let routinesManageCache = [];
+let routinesShowArchived = false;
+let routineEditingId = null;
+
+async function loadRoutinesManage() {
+    try {
+        const res = await fetch(`${API}/api/routines`);
+        const data = await res.json();
+        routinesManageCache = data.routines || [];
+        renderRoutinesManage();
+    } catch (_) {}
+}
+
+function renderRoutinesManage() {
+    const list = document.getElementById('routinesManageList');
+    const empty = document.getElementById('routinesManageEmpty');
+    const archLabel = document.getElementById('routinesShowArchivedLabel');
+    if (!list) return;
+
+    let items = routinesManageCache;
+    const hasArchived = items.some(r => r.status === 'archived');
+
+    if (archLabel) archLabel.style.display = hasArchived ? 'flex' : 'none';
+
+    if (!routinesShowArchived) {
+        items = items.filter(r => r.status !== 'archived');
+    }
+
+    if (items.length === 0) {
+        list.innerHTML = '';
+        if (empty) empty.style.display = 'block';
+        return;
+    }
+    if (empty) empty.style.display = 'none';
+
+    list.innerHTML = items.map(r => {
+        if (routineEditingId === r.id) {
+            return renderRoutineEditForm(r);
+        }
+        const statusClass = `routine-status-${r.status}`;
+        const statusLabel = r.status.charAt(0).toUpperCase() + r.status.slice(1);
+        const pauseBtn = r.status === 'active'
+            ? `<button class="routine-manage-btn" title="Pause" onclick="routineSetStatus(${r.id},'paused')">&#9208;</button>`
+            : r.status === 'paused'
+            ? `<button class="routine-manage-btn" title="Resume" onclick="routineSetStatus(${r.id},'active')">&#9654;</button>`
+            : `<button class="routine-manage-btn" title="Restore" onclick="routineSetStatus(${r.id},'active')">&#9654;</button>`;
+
+        return `<div class="routine-manage-row" data-routine-id="${r.id}">
+            <div class="routine-manage-info">
+                <div class="routine-manage-title">${escapeHtml(r.title)}</div>
+                <div class="routine-manage-meta">
+                    <span>${escapeHtml(r.schedule_label)}</span>
+                    <span class="routine-status-badge ${statusClass}">${statusLabel}</span>
+                </div>
+            </div>
+            <div class="routine-manage-actions">
+                ${pauseBtn}
+                <button class="routine-manage-btn" title="Edit" onclick="routineStartEdit(${r.id})">&#9998;</button>
+                <button class="routine-manage-btn delete-btn" title="Delete" onclick="routineConfirmDelete(${r.id}, this)">&#128465;</button>
+            </div>
+        </div>`;
+    }).join('');
+}
+
+function renderRoutineEditForm(r) {
+    const schedTypes = ['daily','weekdays','weekends','specific_days','interval','monthly'];
+    const labels = {daily:'Daily',weekdays:'Weekdays',weekends:'Weekends',specific_days:'Specific days',interval:'Every N days',monthly:'Monthly'};
+    const dayLabels = ['M','T','W','T','F','S','S'];
+    const sdata = typeof r.schedule_data === 'string' ? JSON.parse(r.schedule_data) : (r.schedule_data || {});
+    const selectedDays = sdata.days || [];
+    const everyN = sdata.every_n_days || 2;
+    const dom = sdata.day_of_month || 1;
+
+    let extraHtml = '';
+    if (r.schedule_type === 'specific_days') {
+        extraHtml = `<div class="routine-edit-days" id="routineEditDays">
+            ${dayLabels.map((l, i) => `<button class="routine-day-toggle${selectedDays.includes(i) ? ' selected' : ''}" data-day="${i}" onclick="toggleManageRoutineDay(this)">${l}</button>`).join('')}
+        </div>`;
+    } else if (r.schedule_type === 'interval') {
+        extraHtml = `<div><label style="font-size:11px;color:var(--text-dim)">Every <input type="number" class="routine-edit-number" id="routineEditN" value="${everyN}" min="2" max="365"> days</label></div>`;
+    } else if (r.schedule_type === 'monthly') {
+        extraHtml = `<div><label style="font-size:11px;color:var(--text-dim)">Day of month <input type="number" class="routine-edit-number" id="routineEditDOM" value="${dom}" min="1" max="31"></label></div>`;
+    }
+
+    return `<div class="routine-edit-form" data-routine-id="${r.id}">
+        <input type="text" id="routineEditTitle" value="${escapeAttr(r.title)}" placeholder="Routine title">
+        <div class="routine-edit-radios">
+            ${schedTypes.map(t => `<button class="routine-edit-radio${r.schedule_type === t ? ' selected' : ''}" data-type="${t}" onclick="routineSelectType(this, ${r.id})">${labels[t]}</button>`).join('')}
+        </div>
+        ${extraHtml}
+        <div class="routine-edit-bar">
+            <button class="routine-edit-cancel" onclick="routineCancelEdit()">Cancel</button>
+            <button class="routine-edit-save" onclick="routineSaveEdit(${r.id})">Save</button>
+        </div>
+    </div>`;
+}
+
+function toggleManageRoutineDay(btn) {
+    btn.classList.toggle('selected');
+}
+
+function routineSelectType(btn, routineId) {
+    const r = routinesManageCache.find(x => x.id === routineId);
+    if (!r) return;
+    const newType = btn.dataset.type;
+    r.schedule_type = newType;
+    renderRoutinesManage();
+}
+
+function routineStartEdit(routineId) {
+    routineEditingId = routineId;
+    renderRoutinesManage();
+}
+
+function routineCancelEdit() {
+    routineEditingId = null;
+    loadRoutinesManage();
+}
+
+async function routineSaveEdit(routineId) {
+    const titleInput = document.getElementById('routineEditTitle');
+    const title = titleInput ? titleInput.value.trim() : '';
+    if (!title) return;
+
+    const form = document.querySelector(`.routine-edit-form[data-routine-id="${routineId}"]`);
+    const selectedType = form?.querySelector('.routine-edit-radio.selected')?.dataset.type || 'daily';
+
+    let scheduleData = {};
+    if (selectedType === 'specific_days') {
+        const btns = form.querySelectorAll('.routine-day-toggle.selected');
+        scheduleData = { days: Array.from(btns).map(b => parseInt(b.dataset.day)) };
+    } else if (selectedType === 'interval') {
+        const nInput = document.getElementById('routineEditN');
+        scheduleData = {
+            every_n_days: parseInt(nInput?.value || 2),
+            anchor_date: new Date().toISOString().split('T')[0],
+        };
+    } else if (selectedType === 'monthly') {
+        const domInput = document.getElementById('routineEditDOM');
+        scheduleData = { day_of_month: parseInt(domInput?.value || 1) };
+    }
+
+    try {
+        const res = await fetch(`${API}/api/routines/${routineId}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ title, schedule_type: selectedType, schedule_data: scheduleData }),
+        });
+        if (!res.ok) throw new Error('Update failed');
+        routineEditingId = null;
+        await loadRoutinesManage();
+        loadRoutines();
+        showToast('Routine updated');
+    } catch (e) {
+        showToast(`Error: ${e.message}`);
+    }
+}
+
+async function routineSetStatus(routineId, status) {
+    try {
+        const res = await fetch(`${API}/api/routines/${routineId}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ status }),
+        });
+        if (!res.ok) throw new Error('Update failed');
+        await loadRoutinesManage();
+        loadRoutines();
+        showToast(`Routine ${status}`);
+    } catch (e) {
+        showToast(`Error: ${e.message}`);
+    }
+}
+
+async function routineConfirmDelete(routineId, btn) {
+    if (btn.dataset.confirming === 'true') {
+        try {
+            const res = await fetch(`${API}/api/routines/${routineId}`, { method: 'DELETE' });
+            if (!res.ok) throw new Error('Delete failed');
+            await loadRoutinesManage();
+            loadRoutines();
+            showToast('Routine deleted');
+        } catch (e) {
+            showToast(`Error: ${e.message}`);
+        }
+        return;
+    }
+    btn.dataset.confirming = 'true';
+    btn.textContent = '?';
+    btn.style.color = '#C75D5D';
+    btn.style.fontWeight = '700';
+    setTimeout(() => {
+        btn.dataset.confirming = '';
+        btn.innerHTML = '&#128465;';
+        btn.style.color = '';
+        btn.style.fontWeight = '';
+    }, 3000);
 }
 
 
@@ -1545,6 +2228,7 @@ function openSettings() {
     document.getElementById('settingsDrawer').classList.add('open');
     syncSettingsUI();
     loadStats();
+    loadRoutinesManage();
 }
 
 function closeSettings() {
@@ -1566,6 +2250,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     loadSidePanels();
     loadRecentThoughts();
+    startRoutinePolling();
     if (typeof initCaptureScreen === 'function') {
         initCaptureScreen();
     }
@@ -1578,6 +2263,17 @@ document.addEventListener('DOMContentLoaded', () => {
     window.refreshTodosWidget = loadSidePanels;
     window.loadTagFilters = loadTagFilters;
     window.renderBrowseView = renderBrowseView;
+    window.loadRoutines = loadRoutines;
+    window.toggleRoutineComplete = toggleRoutineComplete;
+    window.loadRoutinesManage = loadRoutinesManage;
+    window.routineStartEdit = routineStartEdit;
+    window.routineCancelEdit = routineCancelEdit;
+    window.routineSaveEdit = routineSaveEdit;
+    window.routineSetStatus = routineSetStatus;
+    window.routineConfirmDelete = routineConfirmDelete;
+    window.toggleRoutineDay = toggleRoutineDay;
+    window.routineSelectType = routineSelectType;
+    window.toggleRoutineDaily = toggleRoutineDaily;
 
     document.querySelectorAll('.tab-btn').forEach(tab => {
         tab.addEventListener('click', () => switchView(tab.dataset.view));
@@ -1623,8 +2319,10 @@ document.addEventListener('DOMContentLoaded', () => {
         const tag = chip.dataset.tag;
         if (wasSelected) {
             removeTagFromTextarea(tag);
+            if (tag === 'routine') hideRoutineDaySelector();
         } else {
             appendTagToTextarea(tag);
+            if (tag === 'routine') showRoutineDaySelector();
         }
     });
 
@@ -1677,6 +2375,14 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     document.addEventListener('change', handleTodoCheck);
+
+    const archivedCheckbox = document.getElementById('routinesShowArchived');
+    if (archivedCheckbox) {
+        archivedCheckbox.addEventListener('change', () => {
+            routinesShowArchived = archivedCheckbox.checked;
+            renderRoutinesManage();
+        });
+    }
 
     document.addEventListener('click', handleStarToggle);
 
