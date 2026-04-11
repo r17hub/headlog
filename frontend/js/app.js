@@ -653,7 +653,7 @@ function renderReminderItem(thought) {
                 </button>
             </span>
         </div>
-        <div class="side-item-text">${escapeHtml(thought.text)}</div>
+        <div class="side-item-text">${(thought.emoji && !/^\p{Emoji}/u.test(thought.text.trim())) ? escapeHtml(thought.emoji) + ' ' : ''}${escapeHtml(thought.text)}</div>
         ${deadline}
     </div>`;
 }
@@ -688,7 +688,7 @@ function renderTodoItem(thought, isDone) {
             <input type="checkbox" class="todo-checkbox"${isDone ? ' checked' : ''}>
         </div>
         <div class="todo-content">
-            <div class="todo-text">${escapeHtml(thought.text)}</div>
+            <div class="todo-text">${(thought.emoji && !/^\p{Emoji}/u.test(thought.text.trim())) ? escapeHtml(thought.emoji) + ' ' : ''}${escapeHtml(thought.text)}</div>
             <div class="todo-tags">${badge} ${renderTagPills(thought.tags, 'todo')}</div>
             ${deadline}
         </div>
@@ -986,7 +986,9 @@ function renderRoutineCard(r) {
     const dots = (r.consistency || []).slice().reverse().map(filled =>
         `<div class="routine-dot${filled ? ' filled' : ''}"></div>`
     ).join('');
-    const titleEmoji = r.completed_today ? '✅ ' : (r.needs_attention ? '😤 ' : '');
+    const _titleText = r.title || '';
+    const _textStartsWithEmoji = /^\p{Emoji}/u.test(_titleText.trim());
+    const predictedEmoji = (r.emoji && !_textStartsWithEmoji) ? r.emoji + ' ' : '';
 
     return `<div class="routine-card${completedClass}${attentionClass}" data-routine-id="${r.id}" onclick="handleRoutineCardClick(event,${r.id},this)">
         <button class="routine-card-menu-btn" type="button" title="Options" onclick="event.stopPropagation();openRoutineMenu(${r.id},this,false)">···</button>
@@ -994,7 +996,7 @@ function renderRoutineCard(r) {
         <div class="routine-card-top">
             <div class="routine-card-check">${checkIcon}</div>
             <div class="routine-card-info">
-                <div class="routine-card-title">${titleEmoji}${escapeHtml(r.title)}</div>
+                <div class="routine-card-title">${predictedEmoji}${escapeHtml(r.title)}</div>
                 <div class="routine-card-schedule">${escapeHtml(r.schedule_label)}</div>
             </div>
         </div>
@@ -1981,9 +1983,10 @@ function renderThoughtCards(thoughts, highlightQuery) {
     container.innerHTML = thoughts.map((t, i) => {
         const isPrivate = t.tags.includes('private_todo') || t.tags.includes('private_reminder');
         const safeText = escapeHtml(t.text);
+        const emojiPrefix = (!isPrivate && t.emoji && !/^\p{Emoji}/u.test(t.text.trim())) ? escapeHtml(t.emoji) + ' ' : '';
         const displayText = isPrivate
             ? '\u{1F512} Private thought'
-            : highlightText(safeText, highlightQuery);
+            : emojiPrefix + highlightText(safeText, highlightQuery);
 
         const priorityBadge = window.Urgency ? window.Urgency.renderBadge(t.priority) : '';
         const tagPills = t.tags
@@ -2441,4 +2444,150 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         });
     }
+
+    NotificationStack.init();
 });
+
+
+/* ── Section 23: Notification Stack ──────────────────────────── */
+
+const NotificationStack = (() => {
+    let _pollTimer = null;
+    let _knownIds = new Set();
+
+    const TYPE_COLORS = {
+        reminder: '#C47A20',
+        todo:     '#3B6FA8',
+        overdue:  '#dc2626',
+        alarm:    '#6B6A65',
+    };
+
+    function _relTime(firedAt) {
+        const diff = Math.floor((Date.now() - new Date(firedAt).getTime()) / 1000);
+        if (diff < 60) return 'just now';
+        if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
+        if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
+        return 'yesterday';
+    }
+
+    function _dotColor(type) {
+        return TYPE_COLORS[type] || TYPE_COLORS.alarm;
+    }
+
+    function render(notifications, unreadCount) {
+        const list = document.getElementById('notif-list');
+        const badge = document.getElementById('notif-badge');
+        const empty = document.getElementById('notif-empty');
+        if (!list) return;
+
+        // Badge
+        if (badge) {
+            if (unreadCount > 0) {
+                badge.textContent = unreadCount;
+                badge.style.display = '';
+            } else {
+                badge.style.display = 'none';
+            }
+        }
+
+        if (!notifications.length) {
+            list.innerHTML = '<div class="notif-empty">No notifications yet</div>';
+            return;
+        }
+
+        // Determine new IDs (for entrance animation on new arrivals)
+        const newIds = new Set(notifications.map(n => n.id));
+
+        const html = notifications.map(n => {
+            const isNew = !_knownIds.has(n.id);
+            const unreadCls = n.is_read ? '' : ' unread';
+            const dot = _dotColor(n.type);
+            const msg = escapeHtml(n.message || '');
+            const timeStr = _relTime(n.fired_at);
+            const typeLabel = n.type || 'alarm';
+            return `<div class="notif-item${unreadCls}${isNew ? ' notif-new' : ''}" data-id="${n.id}" data-read="${n.is_read}">
+  <div class="notif-dot" style="background:${dot}"></div>
+  <div class="notif-body">
+    <div class="notif-msg" title="${msg}">${msg}</div>
+    <div class="notif-meta">
+      <span>${timeStr}</span>
+      <span class="notif-type-label">${typeLabel}</span>
+    </div>
+  </div>
+  <button class="notif-dismiss" data-id="${n.id}" title="Dismiss">&times;</button>
+</div>`;
+        }).join('');
+
+        list.innerHTML = html;
+        _knownIds = newIds;
+    }
+
+    async function load() {
+        try {
+            const res = await fetch(`${API}/api/notifications?limit=50`);
+            if (!res.ok) return;
+            const data = await res.json();
+            render(data.notifications || [], data.unread_count || 0);
+        } catch (_) {}
+    }
+
+    async function markRead(id) {
+        try {
+            await fetch(`${API}/api/notifications/read`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ id }),
+            });
+        } catch (_) {}
+    }
+
+    async function markAllRead() {
+        try {
+            await fetch(`${API}/api/notifications/read-all`, { method: 'POST' });
+            await load();
+        } catch (_) {}
+    }
+
+    async function dismiss(id) {
+        try {
+            await fetch(`${API}/api/notifications/${id}`, { method: 'DELETE' });
+            await load();
+        } catch (_) {}
+    }
+
+    function _handleClick(e) {
+        const dismissBtn = e.target.closest('.notif-dismiss');
+        if (dismissBtn) {
+            e.stopPropagation();
+            dismiss(parseInt(dismissBtn.dataset.id, 10));
+            return;
+        }
+        const item = e.target.closest('.notif-item');
+        if (item && item.dataset.read === '0') {
+            const id = parseInt(item.dataset.id, 10);
+            item.classList.remove('unread');
+            item.dataset.read = '1';
+            markRead(id);
+            // Update badge
+            const badge = document.getElementById('notif-badge');
+            if (badge) {
+                const cur = parseInt(badge.textContent, 10) - 1;
+                if (cur <= 0) { badge.style.display = 'none'; }
+                else { badge.textContent = cur; }
+            }
+        }
+    }
+
+    function init() {
+        const list = document.getElementById('notif-list');
+        if (list) list.addEventListener('click', _handleClick);
+
+        const clearAll = document.getElementById('notif-clear-all');
+        if (clearAll) clearAll.addEventListener('click', markAllRead);
+
+        load();
+        _pollTimer = setInterval(load, 30000);
+    }
+
+    return { init, load };
+})();

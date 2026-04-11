@@ -276,6 +276,10 @@ def init_db():
         conn.execute("ALTER TABLE thoughts ADD COLUMN status TEXT NOT NULL DEFAULT 'active'")
     if 'priority' not in columns:
         conn.execute("ALTER TABLE thoughts ADD COLUMN priority TEXT DEFAULT NULL")
+    if 'is_muted' not in columns:
+        conn.execute("ALTER TABLE thoughts ADD COLUMN is_muted INTEGER NOT NULL DEFAULT 0")
+    if 'emoji' not in columns:
+        conn.execute("ALTER TABLE thoughts ADD COLUMN emoji TEXT DEFAULT NULL")
 
     # ── Edit history audit log (append-only) ───────────────────────
     conn.execute("""
@@ -368,6 +372,22 @@ def init_db():
            END""",
     ]:
         conn.execute(trigger)
+
+    # ── Notification events table ─────────────────────────────────
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS notification_events (
+            id         INTEGER PRIMARY KEY AUTOINCREMENT,
+            message    TEXT NOT NULL,
+            type       TEXT NOT NULL DEFAULT 'alarm',
+            thought_id INTEGER,
+            fired_at   TEXT NOT NULL,
+            is_read    INTEGER NOT NULL DEFAULT 0
+        )
+    """)
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_notif_fired ON notification_events(fired_at)"
+    )
+
     conn.commit()
     conn.close()
     print(f"Database ready: {DB_PATH}")
@@ -377,6 +397,8 @@ def _row_to_dict(row):
     d = dict(row)
     d["tags"] = json.loads(d["tags"])
     d.setdefault("priority", None)
+    d["is_muted"] = bool(d.get("is_muted", 0))
+    d.setdefault("emoji", None)
     return d
 
 
@@ -483,7 +505,23 @@ def _reshow_notification(title, message):
         _send_macos_notification(title, message)
 
 
-def fire_notification(title, message, tone="gentle"):
+def _record_notification(message, notif_type='alarm', thought_id=None):
+    """Insert a notification event row (non-fatal; never raises)."""
+    try:
+        conn = get_db()
+        try:
+            conn.execute(
+                "INSERT INTO notification_events (message, type, thought_id, fired_at) VALUES (?, ?, ?, ?)",
+                (message, notif_type, thought_id, datetime.now().strftime("%Y-%m-%dT%H:%M:%S")),
+            )
+            conn.commit()
+        finally:
+            conn.close()
+    except Exception as err:
+        print(f"[Notification] record failed: {err}")
+
+
+def fire_notification(title, message, tone="gentle", thought_id=None, notif_type='alarm'):
     """Fire visual notification and play the requested tone."""
     play_sound(tone)
     safe_title, safe_message = _normalize_notification_text(title, message)
@@ -494,6 +532,8 @@ def fire_notification(title, message, tone="gentle"):
             args=(safe_title, safe_message),
             daemon=True,
         ).start()
+    combined = f"{safe_title} \u2014 {safe_message}" if safe_title != safe_message else safe_message
+    _record_notification(combined, notif_type, thought_id)
 
 
 def _alarms_table_exists(conn):
@@ -860,6 +900,23 @@ def edit_thought(thought_id, new_text, new_priority_override=None):
 
     try:
         maybe_enrich(updated)
+    except Exception:
+        pass
+
+    # Re-predict emoji if text changed substantially (>30% word diff)
+    try:
+        old_words = set(old_text.lower().split())
+        new_words = set(cleaned.lower().split())
+        if old_words and new_words:
+            diff_ratio = len(old_words.symmetric_difference(new_words)) / max(len(old_words), len(new_words))
+            if diff_ratio > 0.3:
+                conn2 = get_db()
+                try:
+                    conn2.execute("UPDATE thoughts SET emoji = NULL WHERE id = ?", (thought_id,))
+                    conn2.commit()
+                finally:
+                    conn2.close()
+                maybe_predict_emoji(updated)
     except Exception:
         pass
 
@@ -1686,6 +1743,163 @@ def maybe_enrich(thought):
     ).start()
 
 
+def build_emoji_prompt(text):
+    return (
+        'You are an emoji classifier. Given a task, reminder, or routine, '
+        'respond with exactly ONE emoji that best represents it.\n\n'
+        'Rules:\n'
+        '- Respond with ONLY the emoji character, nothing else\n'
+        '- No text, no explanation, no punctuation, no notes\n'
+        '- Pick the most specific and recognizable emoji for the activity\n'
+        '- Examples:\n'
+        '  "go to gym at 7AM" \u2192 \U0001f4aa\n'
+        '  "take protein shake" \u2192 \U0001f964\n'
+        '  "buy groceries" \u2192 \U0001f6d2\n'
+        '  "call mom" \u2192 \U0001f4de\n'
+        '  "read 20 pages of book" \u2192 \U0001f4d6\n'
+        '  "deploy the API endpoint" \u2192 \U0001f680\n'
+        '  "pay electricity bill" \u2192 \U0001f4a1\n'
+        '  "take creatine every morning" \u2192 \U0001f48a\n'
+        '  "water the plants" \u2192 \U0001f331\n'
+        '  "team standup at 10" \u2192 \U0001f465\n'
+        '  "dentist appointment at 3pm" \u2192 \U0001f9b7\n'
+        '  "submit tax documents" \u2192 \U0001f4c4\n'
+        '  "pick up laundry" \u2192 \U0001f454\n'
+        '  "meditate for 10 minutes" \u2192 \U0001f9d8\n'
+        '  "buy milk" \u2192 \U0001f95b\n\n'
+        f'Task: "{text}"\nEmoji:'
+    )
+
+
+_EMOJI_RE = re.compile(
+    "["
+    "\U0001F300-\U0001F9FF"
+    "\U00002702-\U000027B0"
+    "\U0000FE00-\U0000FE0F"
+    "\U0000200D"
+    "\U000024C2-\U0001F251"
+    "\U0001FA00-\U0001FA6F"
+    "\U0001FA70-\U0001FAFF"
+    "]+",
+    flags=re.UNICODE,
+)
+
+
+def extract_single_emoji(text):
+    """Extract the first emoji from an AI response. Returns None if not found."""
+    if not text:
+        return None
+    text = text.strip().strip('"').strip("'").strip('`').strip()
+    match = _EMOJI_RE.search(text)
+    if match:
+        emoji = match.group(0)
+        if len(emoji) <= 8:
+            return emoji
+    return None
+
+
+def ai_predict_emoji(thought_id, text, tags):
+    """Background task: predict a single emoji for a todo/reminder/routine thought."""
+    actionable_tags = {'todo', 'reminder', 'routine', 'private_todo', 'private_reminder'}
+    thought_tags = set(tags) if isinstance(tags, list) else set(json.loads(tags or '[]'))
+    if not thought_tags.intersection(actionable_tags):
+        return
+
+    # Skip prediction if the text already begins with an emoji.
+    if text and _EMOJI_RE.match(text.strip()):
+        return
+
+    if not _enrich_semaphore.acquire(blocking=False):
+        return
+
+    try:
+        config = load_config()
+        provider = config.get('ai_provider', 'ollama')
+        if provider == 'none':
+            return
+        if provider == 'gemini' and not config.get('api_key'):
+            return
+
+        prompt = build_emoji_prompt(text)
+
+        if provider == 'gemini':
+            api_key = config.get('api_key', '')
+            model = config.get('ai_model', 'gemini-2.0-flash-lite')
+            raw = None
+            try:
+                url = (f"https://generativelanguage.googleapis.com/v1beta/"
+                       f"models/{model}:generateContent?key={api_key}")
+                data = json.dumps({
+                    "contents": [{"parts": [{"text": prompt}]}],
+                    "generationConfig": {"temperature": 0.3, "maxOutputTokens": 10},
+                }).encode()
+                req = urllib.request.Request(
+                    url, data=data, headers={"Content-Type": "application/json"},
+                )
+                with urllib.request.urlopen(req, timeout=15) as resp:
+                    result = json.loads(resp.read())
+                    raw = result["candidates"][0]["content"]["parts"][0]["text"]
+            except Exception:
+                return
+        else:
+            model = config.get('ai_model', 'llama3.2:3b')
+            raw = None
+            try:
+                data = json.dumps({
+                    "model": model, "prompt": prompt, "stream": False,
+                    "options": {"temperature": 0.3, "num_predict": 10},
+                }).encode()
+                req = urllib.request.Request(
+                    "http://localhost:11434/api/generate",
+                    data=data, headers={"Content-Type": "application/json"},
+                )
+                with urllib.request.urlopen(req, timeout=15) as resp:
+                    raw = json.loads(resp.read()).get("response")
+            except urllib.error.URLError:
+                return
+            except Exception:
+                return
+
+        if not raw:
+            return
+
+        emoji = extract_single_emoji(raw.strip())
+        if not emoji:
+            return
+
+        conn = sqlite3.connect(str(DB_PATH))
+        try:
+            conn.execute(
+                "UPDATE thoughts SET emoji = ? WHERE id = ? AND emoji IS NULL",
+                (emoji, thought_id),
+            )
+            conn.commit()
+        finally:
+            conn.close()
+
+        print(f"[emoji-predict] thought {thought_id}: {emoji}")
+
+    except Exception as e:
+        print(f"[emoji-predict] Error for thought {thought_id}: {e}")
+    finally:
+        _enrich_semaphore.release()
+
+
+def maybe_predict_emoji(thought):
+    """Spawn emoji prediction in a background thread if conditions are met."""
+    config = load_config()
+    provider = config.get('ai_provider', 'ollama')
+    if provider == 'none':
+        return
+    if provider == 'gemini' and not config.get('api_key'):
+        return
+    threading.Thread(
+        target=ai_predict_emoji,
+        args=(thought['id'], thought['text'], thought['tags']),
+        daemon=True,
+    ).start()
+
+
 def quick_ai_classify(text):
     """Synchronous LLM fallback when keyword detection yields only 'random'.
 
@@ -1806,7 +2020,7 @@ class AlarmScheduler:
 
         try:
             due_rows = conn.execute(
-                "SELECT a.*, t.tags, t.text AS thought_text "
+                "SELECT a.*, t.tags, t.text AS thought_text, t.emoji AS thought_emoji "
                 "FROM alarms a JOIN thoughts t ON a.thought_id = t.id "
                 "WHERE a.status = 'pending' AND a.fire_at <= ? "
                 "ORDER BY a.fire_at ASC",
@@ -1824,10 +2038,25 @@ class AlarmScheduler:
                     title = "🔒 Private reminder"
                     body = "Tap to view in Headlog"
                 else:
-                    title = self._zone_title(alarm["zone"], alarm["sequence_index"])
+                    thought_emoji = alarm["thought_emoji"] or ""
+                    base_title = self._zone_title(alarm["zone"], alarm["sequence_index"])
+                    title = f"{thought_emoji} {base_title}".strip() if thought_emoji else base_title
                     body = alarm["message"]
 
-                fire_notification(title, body, alarm["tone"])
+                tags_set = set(tags)
+                if alarm["zone"] == "open_todo":
+                    _notif_type = "todo"
+                elif alarm["zone"] == "overdue_repeat":
+                    _notif_type = "overdue"
+                elif "reminder" in tags_set or "private_reminder" in tags_set:
+                    _notif_type = "reminder"
+                elif "todo" in tags_set or "private_todo" in tags_set:
+                    _notif_type = "todo"
+                else:
+                    _notif_type = "alarm"
+
+                fire_notification(title, body, alarm["tone"],
+                                  thought_id=alarm["thought_id"], notif_type=_notif_type)
 
                 conn.execute(
                     "UPDATE alarms SET status = 'fired' WHERE id = ?",
@@ -1841,10 +2070,84 @@ class AlarmScheduler:
                     )
 
             conn.commit()
+            self._schedule_overdue_repeats(conn)
         except Exception as err:
             print(f"[AlarmScheduler] Error: {err}")
         finally:
             conn.close()
+
+    def _schedule_overdue_repeats(self, db):
+        """For every active, unmuted thought that had time-based alarms (all fired,
+        none pending), schedule a repeat overdue alert 10 min from now."""
+        now = datetime.now()
+        now_iso = now.isoformat()
+
+        try:
+            # Thoughts that are active, unmuted, have reminder/todo tags,
+            # have at least one fired non-open_todo alarm (meaning they had a real anchor),
+            # and have no pending alarms right now.
+            overdue = db.execute("""
+                SELECT t.id, t.text, t.tags, t.is_private,
+                       MAX(a_fired.fire_at) AS last_fired_at
+                FROM thoughts t
+                JOIN alarms a_fired ON a_fired.thought_id = t.id
+                WHERE t.status = 'active'
+                  AND t.is_muted = 0
+                  AND (t.tags LIKE '%"todo"%' OR t.tags LIKE '%"reminder"%'
+                       OR t.tags LIKE '%"private_todo"%' OR t.tags LIKE '%"private_reminder"%')
+                  AND a_fired.status = 'fired'
+                  AND a_fired.zone NOT IN ('open_todo', 'overdue_repeat')
+                  AND NOT EXISTS (
+                      SELECT 1 FROM alarms a_pend
+                      WHERE a_pend.thought_id = t.id
+                      AND a_pend.status = 'pending'
+                  )
+                GROUP BY t.id
+                HAVING MAX(a_fired.fire_at) < ?
+            """, (now_iso,)).fetchall()
+        except Exception as err:
+            print(f"[AlarmScheduler] overdue_repeat query failed: {err}")
+            return
+
+        if not overdue:
+            return
+
+        next_fire = (now + timedelta(minutes=10)).isoformat()
+
+        for thought in overdue:
+            text = thought["text"] or ""
+            if thought["is_private"]:
+                display_text = "🔒 Tap to view in Headlog"
+            else:
+                display_text = (text[:77] + "...") if len(text) > 80 else text
+
+            try:
+                last_fired = datetime.fromisoformat(thought["last_fired_at"])
+                overdue_delta = now - last_fired
+                hours = int(overdue_delta.total_seconds() // 3600)
+                mins = int((overdue_delta.total_seconds() % 3600) // 60)
+                if hours > 0:
+                    overdue_label = f"overdue {hours}h {mins}m"
+                else:
+                    overdue_label = f"overdue {mins}m"
+            except Exception:
+                overdue_label = "overdue"
+
+            message = f"⏰ Still pending ({overdue_label}): {display_text}"
+
+            try:
+                db.execute(
+                    "INSERT INTO alarms (thought_id, zone, sequence_index, fire_at, status, tone, message, created_at) "
+                    "VALUES (?, 'overdue_repeat', 0, ?, 'pending', 'firm', ?, ?)",
+                    (thought["id"], next_fire, message, now_iso),
+                )
+            except Exception as err:
+                print(f"[AlarmScheduler] overdue_repeat insert failed: {err}")
+
+        try:
+            db.commit()
+        except Exception as err:
+            print(f"[AlarmScheduler] overdue_repeat commit failed: {err}")
 
     def _catch_up_missed(self):
         now_iso = datetime.now().isoformat()
@@ -2269,7 +2572,9 @@ class APIHandler(SimpleHTTPRequestHandler):
                 conn = get_db()
                 try:
                     rows = conn.execute(
-                        "SELECT * FROM routines WHERE status = 'active'"
+                        "SELECT r.*, t.emoji AS thought_emoji "
+                        "FROM routines r LEFT JOIN thoughts t ON r.thought_id = t.id "
+                        "WHERE r.status = 'active'"
                     ).fetchall()
 
                     routines_out = []
@@ -2297,6 +2602,7 @@ class APIHandler(SimpleHTTPRequestHandler):
                             'consistency': dots,
                             'needs_attention': needs_att,
                             'consistency_pct': pct,
+                            'emoji': r.get('thought_emoji') or None,
                         })
 
                     completed_count = sum(1 for r in routines_out if r['completed_today'])
@@ -2379,10 +2685,43 @@ class APIHandler(SimpleHTTPRequestHandler):
             except Exception as e:
                 return self._json_response({"error": str(e)}, 500)
 
+        if path == "/api/notifications":
+            try:
+                limit = int(qs.get("limit", ["50"])[0])
+                conn = get_db()
+                try:
+                    rows = conn.execute(
+                        "SELECT * FROM notification_events ORDER BY fired_at DESC LIMIT ?",
+                        (limit,),
+                    ).fetchall()
+                    unread = conn.execute(
+                        "SELECT COUNT(*) FROM notification_events WHERE is_read = 0"
+                    ).fetchone()[0]
+                finally:
+                    conn.close()
+                notifications = [dict(r) for r in rows]
+                return self._json_response({"notifications": notifications, "unread_count": unread})
+            except Exception as e:
+                return self._json_response({"error": str(e)}, 500)
+
         self.send_error(404)
 
     def do_DELETE(self):
         path = urlparse(self.path).path
+
+        m = re.match(r'^/api/notifications/(\d+)$', path)
+        if m:
+            try:
+                notif_id = int(m.group(1))
+                conn = get_db()
+                try:
+                    conn.execute("DELETE FROM notification_events WHERE id = ?", (notif_id,))
+                    conn.commit()
+                finally:
+                    conn.close()
+                return self._json_response({"success": True})
+            except Exception as e:
+                return self._json_response({"error": str(e)}, 500)
 
         m = re.match(r'^/api/routines/(\d+)$', path)
         if m:
@@ -2593,6 +2932,7 @@ class APIHandler(SimpleHTTPRequestHandler):
 
                 self._json_response(resp, 201)
                 maybe_enrich(thought)
+                maybe_predict_emoji(thought)
                 return
             except Exception as e:
                 return self._json_response({"error": str(e)}, 500)
@@ -2903,6 +3243,32 @@ class APIHandler(SimpleHTTPRequestHandler):
         if path == "/api/alarms/test":
             try:
                 fire_notification("🔔 Test Alarm", "This is a test alarm", "gentle")
+                return self._json_response({"success": True})
+            except Exception as e:
+                return self._json_response({"error": str(e)}, 500)
+
+        if path == "/api/notifications/read":
+            try:
+                body = json.loads(self.rfile.read(int(self.headers.get("Content-Length", 0))))
+                notif_id = int(body.get("id", 0))
+                conn = get_db()
+                try:
+                    conn.execute("UPDATE notification_events SET is_read = 1 WHERE id = ?", (notif_id,))
+                    conn.commit()
+                finally:
+                    conn.close()
+                return self._json_response({"success": True})
+            except Exception as e:
+                return self._json_response({"error": str(e)}, 500)
+
+        if path == "/api/notifications/read-all":
+            try:
+                conn = get_db()
+                try:
+                    conn.execute("UPDATE notification_events SET is_read = 1")
+                    conn.commit()
+                finally:
+                    conn.close()
                 return self._json_response({"success": True})
             except Exception as e:
                 return self._json_response({"error": str(e)}, 500)
