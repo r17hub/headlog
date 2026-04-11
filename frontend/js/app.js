@@ -2309,6 +2309,54 @@ function closeSettings() {
 }
 
 
+/* ── Mode Support ─────────────────────────────────────────────── */
+
+function showConfirm(title, message, { okLabel = 'Continue', danger = false } = {}) {
+    return new Promise(resolve => {
+        const overlay = document.getElementById('confirmOverlay');
+        document.getElementById('confirmTitle').textContent = title;
+        document.getElementById('confirmMessage').textContent = message;
+        const okBtn = document.getElementById('confirmOk');
+        okBtn.textContent = okLabel;
+        okBtn.classList.toggle('danger', !!danger);
+        overlay.style.display = 'flex';
+
+        const done = result => {
+            overlay.style.display = 'none';
+            okBtn.onclick = null;
+            document.getElementById('confirmCancel').onclick = null;
+            resolve(result);
+        };
+
+        okBtn.onclick = () => done(true);
+        document.getElementById('confirmCancel').onclick = () => done(false);
+        overlay.onclick = e => { if (e.target === overlay) done(false); };
+    });
+}
+
+function _applyMode(mode) {
+    const badge    = document.getElementById('modeBadge');
+    const resetRow = document.getElementById('sandboxResetRow');
+    const switchBtn = document.getElementById('modeSwitchBtn');
+    const nameEl   = document.getElementById('modeCurrentName');
+    const descEl   = document.getElementById('modeCurrentDesc');
+
+    if (mode === 'sandbox') {
+        if (badge)     badge.style.display = '';
+        if (resetRow)  resetRow.style.display = '';
+        if (switchBtn) switchBtn.textContent = 'Back to Live';
+        if (nameEl)    nameEl.textContent = 'Sandbox';
+        if (descEl)    descEl.textContent = 'Testing environment — data can be wiped anytime';
+    } else {
+        if (badge)     badge.style.display = 'none';
+        if (resetRow)  resetRow.style.display = 'none';
+        if (switchBtn) switchBtn.textContent = 'Enter Sandbox';
+        if (nameEl)    nameEl.textContent = 'Live';
+        if (descEl)    descEl.textContent = 'Your real thoughts and data';
+    }
+}
+
+
 /* ── Initialization ───────────────────────────────────────────── */
 
 document.addEventListener('DOMContentLoaded', () => {
@@ -2542,6 +2590,64 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     NotificationStack.init();
+
+    // ── Mode: check on load and wire buttons ──────────────────────
+    fetch(`${API}/api/mode`)
+        .then(r => r.ok ? r.json() : null)
+        .then(d => { if (d) _applyMode(d.mode || 'live'); })
+        .catch(() => {});
+
+    document.getElementById('modeSwitchBtn')?.addEventListener('click', async () => {
+        const currentName = document.getElementById('modeCurrentName')?.textContent?.trim().toLowerCase();
+        const targetMode = currentName === 'live' ? 'sandbox' : 'live';
+
+        const confirmed = await showConfirm(
+            targetMode === 'sandbox' ? 'Enter Sandbox Mode' : 'Back to Live Mode',
+            targetMode === 'sandbox'
+                ? 'Your live data stays safe and untouched. Sandbox is a clean slate for testing.'
+                : 'Switching back to Live mode. Your sandbox data is preserved.',
+        );
+        if (!confirmed) return;
+
+        try {
+            const resp = await fetch(`${API}/api/mode`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ mode: targetMode }),
+            });
+            if (!resp.ok) {
+                let msg = 'Failed to switch mode';
+                try { const d = await resp.json(); msg = d.error || msg; } catch (_) {}
+                showToast(msg);
+                return;
+            }
+            location.reload();
+        } catch (e) {
+            showToast('Could not reach server — is Headlog running?');
+        }
+    });
+
+    document.getElementById('sandboxResetBtn')?.addEventListener('click', async () => {
+        const confirmed = await showConfirm(
+            'Reset Sandbox',
+            'This will delete all sandbox thoughts, tags, and journal files. Your live data is not affected.',
+            { okLabel: 'Reset', danger: true },
+        );
+        if (!confirmed) return;
+
+        try {
+            const resp = await fetch(`${API}/api/sandbox/reset`, { method: 'POST' });
+            if (!resp.ok) {
+                let msg = 'Failed to reset sandbox';
+                try { const d = await resp.json(); msg = d.error || msg; } catch (_) {}
+                showToast(msg);
+                return;
+            }
+            location.reload();
+        } catch (e) {
+            showToast('Could not reach server — is Headlog running?');
+        }
+    });
 });
 
 

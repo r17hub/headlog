@@ -6,6 +6,7 @@ import json
 import mimetypes
 import os
 import re
+import shutil
 import signal
 import socket
 import sqlite3
@@ -52,7 +53,7 @@ FRONTEND_PORT = 7777
 
 PRIVATE_TAGS = {"private_todo", "private_reminder"}
 # Tags always seeded even if not on any thought yet (tied to widget/alarm logic)
-_STRUCTURAL_TAGS = {"todo", "reminder", "private_todo", "private_reminder"}
+_STRUCTURAL_TAGS = {"todo", "reminder", "private_todo", "private_reminder", "routine"}
 
 VALID_PRIORITIES = {"p0", "p1", "p2"}
 _PRIORITY_INLINE_RE = re.compile(r'#(p[0-2])\b', re.IGNORECASE)
@@ -256,29 +257,38 @@ def get_all_tags(conn):
 
 
 def seed_tags_table(conn):
-    """Populate the tags table on first run from actual thought usage + structural tags."""
-    count = conn.execute("SELECT COUNT(*) FROM tags").fetchone()[0]
-    if count > 0:
-        return  # already seeded
-
-    used = set()
-    rows = conn.execute("SELECT tags FROM thoughts WHERE tags != '[]'").fetchall()
-    for row in rows:
-        try:
-            for t in json.loads(row["tags"]):
-                if re.match(r'^[a-z][a-z0-9_]*$', str(t)):
-                    used.add(t)
-        except Exception:
-            pass
-
+    """Populate the tags table on first run from actual thought usage + structural tags.
+    On subsequent runs, ensures all structural tags are always present.
+    """
     now = datetime.now().isoformat()
-    for tag in sorted(used | _STRUCTURAL_TAGS):
-        conn.execute(
-            "INSERT OR IGNORE INTO tags (name, created_at) VALUES (?, ?)",
-            (tag, now),
-        )
-    conn.commit()
-    print(f"Tags table seeded with {len(used | _STRUCTURAL_TAGS)} tags.")
+    count = conn.execute("SELECT COUNT(*) FROM tags").fetchone()[0]
+
+    if count == 0:
+        # First run: seed from thought usage + structural tags
+        used = set()
+        rows = conn.execute("SELECT tags FROM thoughts WHERE tags != '[]'").fetchall()
+        for row in rows:
+            try:
+                for t in json.loads(row["tags"]):
+                    if re.match(r'^[a-z][a-z0-9_]*$', str(t)):
+                        used.add(t)
+            except Exception:
+                pass
+        for tag in sorted(used | _STRUCTURAL_TAGS):
+            conn.execute(
+                "INSERT OR IGNORE INTO tags (name, created_at) VALUES (?, ?)",
+                (tag, now),
+            )
+        conn.commit()
+        print(f"Tags table seeded with {len(used | _STRUCTURAL_TAGS)} tags.")
+    else:
+        # Always ensure structural tags exist (handles new additions to _STRUCTURAL_TAGS)
+        for tag in _STRUCTURAL_TAGS:
+            conn.execute(
+                "INSERT OR IGNORE INTO tags (name, created_at) VALUES (?, ?)",
+                (tag, now),
+            )
+        conn.commit()
 
 
 def init_db():
@@ -2296,6 +2306,74 @@ class AlarmScheduler:
 scheduler = None
 
 
+# ── Mode support ──────────────────────────────────────────────────
+
+def get_mode():
+    """Read active mode from config.json. Defaults to 'live'."""
+    if CONFIG_PATH.exists():
+        try:
+            with open(CONFIG_PATH, encoding='utf-8') as f:
+                cfg = json.load(f)
+            m = cfg.get('mode', 'live')
+            if m in ('live', 'sandbox'):
+                return m
+        except Exception:
+            pass
+    return 'live'
+
+
+def _write_mode(mode):
+    """Write mode to config.json, preserving all other keys."""
+    cfg = {}
+    if CONFIG_PATH.exists():
+        try:
+            with open(CONFIG_PATH, encoding='utf-8') as f:
+                cfg = json.load(f)
+        except Exception:
+            pass
+    cfg['mode'] = mode
+    with open(CONFIG_PATH, 'w', encoding='utf-8') as f:
+        json.dump(cfg, f, indent=2)
+
+
+def _resolve_paths_for_mode(mode):
+    """Return (db_path, journal_dir) for the given mode."""
+    if mode == 'sandbox':
+        return DATA_DIR / 'headlog-sandbox.db', DATA_DIR / 'journal-sandbox'
+    return DATA_DIR / 'headlog-live.db', DATA_DIR / 'journal'
+
+
+def _switch_mode(mode):
+    """Hot-swap to a new mode: update globals, reinit DB, restart scheduler."""
+    global DB_PATH, JOURNAL_DIR, scheduler
+    if scheduler:
+        scheduler.stop()
+        scheduler = None
+    DB_PATH, JOURNAL_DIR = _resolve_paths_for_mode(mode)
+    JOURNAL_DIR.mkdir(parents=True, exist_ok=True)
+    init_db()
+    scheduler = AlarmScheduler(DB_PATH)
+    scheduler.start()
+    print(f"Switched to {mode} mode (DB: {DB_PATH})")
+
+
+def _reset_sandbox():
+    """Wipe all sandbox data and reinitialize the sandbox database."""
+    global scheduler
+    if scheduler:
+        scheduler.stop()
+        scheduler = None
+    if DB_PATH.exists():
+        DB_PATH.unlink()
+    if JOURNAL_DIR.exists():
+        shutil.rmtree(str(JOURNAL_DIR))
+    JOURNAL_DIR.mkdir(parents=True, exist_ok=True)
+    init_db()
+    scheduler = AlarmScheduler(DB_PATH)
+    scheduler.start()
+    print("Sandbox reset complete")
+
+
 # ── Frontend server (static files on :7777) ──────────────────────
 
 class FrontendHandler(SimpleHTTPRequestHandler):
@@ -2780,6 +2858,9 @@ class APIHandler(SimpleHTTPRequestHandler):
                 return self._json_response(tags)
             except Exception as e:
                 return self._json_response({"error": str(e)}, 500)
+
+        if path == "/api/mode":
+            return self._json_response({"mode": get_mode()})
 
         self.send_error(404)
 
@@ -3405,6 +3486,29 @@ class APIHandler(SimpleHTTPRequestHandler):
             except Exception as e:
                 return self._json_response({"error": str(e)}, 500)
 
+        if path == "/api/mode":
+            try:
+                body = json.loads(self.rfile.read(int(self.headers.get("Content-Length", 0))))
+                new_mode = body.get("mode", "")
+                if new_mode not in ("live", "sandbox"):
+                    return self._json_response({"error": "mode must be 'live' or 'sandbox'"}, 400)
+                _write_mode(new_mode)
+                _switch_mode(new_mode)
+                return self._json_response({"mode": new_mode, "status": "switched"})
+            except Exception as e:
+                return self._json_response({"error": str(e)}, 500)
+
+        if path == "/api/sandbox/reset":
+            try:
+                if get_mode() != "sandbox":
+                    return self._json_response(
+                        {"error": "Sandbox reset is only available in sandbox mode"}, 403
+                    )
+                _reset_sandbox()
+                return self._json_response({"status": "ok", "message": "Sandbox reset complete"})
+            except Exception as e:
+                return self._json_response({"error": str(e)}, 500)
+
         self.send_error(404)
 
     def _json_response(self, data, status=200):
@@ -3433,10 +3537,22 @@ def get_local_ip():
 
 
 def main():
-    global scheduler
+    global scheduler, DB_PATH, JOURNAL_DIR
 
     DATA_DIR.mkdir(exist_ok=True)
-    JOURNAL_DIR.mkdir(exist_ok=True)
+
+    # Migrate legacy thoughts.db → headlog-live.db on first run after this change
+    legacy_db = DATA_DIR / "thoughts.db"
+    live_db = DATA_DIR / "headlog-live.db"
+    if legacy_db.exists() and not live_db.exists():
+        legacy_db.rename(live_db)
+        print("Migrated thoughts.db → headlog-live.db (data preserved)")
+
+    mode = get_mode()
+    DB_PATH, JOURNAL_DIR = _resolve_paths_for_mode(mode)
+    JOURNAL_DIR.mkdir(parents=True, exist_ok=True)
+    print(f"Starting in {mode} mode (DB: {DB_PATH})")
+
     init_db()
 
     scheduler = AlarmScheduler(DB_PATH)

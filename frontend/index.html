@@ -11,7 +11,7 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Bruno+Ace+SC&family=Capriola&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="/css/base.css?v=redesign-3">
-    <link rel="stylesheet" href="/css/components.css?v=unified-tags">
+    <link rel="stylesheet" href="/css/components.css?v=sandbox-mode">
     <link rel="stylesheet" href="/css/pages.css?v=redesign-3">
 </head>
 <body>
@@ -21,6 +21,7 @@
             <div class="logo-mark"><span>h</span></div>
             <div class="logo-text">headlog</div>
         </a>
+        <div id="modeBadge" class="mode-badge-sandbox" style="display:none">&#9879; Sandbox</div>
         <div class="tab-bar">
             <button class="tab-btn active" data-view="capture">&#9998; Capture</button>
             <button class="tab-btn" data-view="browse">&#9638; Browse</button>
@@ -265,6 +266,21 @@
         </div>
 
         <div class="settings-section">
+            <div class="settings-section-title">Mode</div>
+            <div class="settings-row mode-setting-row">
+                <div class="mode-setting-info">
+                    <div class="mode-setting-name" id="modeCurrentName">Live</div>
+                    <div class="settings-desc" id="modeCurrentDesc">Your real thoughts and data</div>
+                </div>
+                <button class="mode-switch-btn" id="modeSwitchBtn" type="button">Enter Sandbox</button>
+            </div>
+            <div class="settings-row sandbox-reset-row" id="sandboxResetRow" style="display:none">
+                <div class="settings-desc">Wipes all sandbox thoughts, tags, and journal files. Live data is unaffected.</div>
+                <button class="sandbox-reset-btn" id="sandboxResetBtn" type="button">Reset Sandbox</button>
+            </div>
+        </div>
+
+        <div class="settings-section">
             <div class="settings-section-title">About</div>
             <p class="settings-about">
                 A raw dump of what&rsquo;s in your head. Headlog captures your thoughts with zero friction &mdash; type, save, move on. Intelligence emerges from the accumulated text over time.
@@ -272,10 +288,22 @@
         </div>
     </div>
 
+    <!-- ── Custom Confirm Modal ──────────────────────────────── -->
+    <div id="confirmOverlay" class="confirm-overlay" style="display:none" aria-modal="true" role="dialog">
+        <div class="confirm-card">
+            <div class="confirm-card-title" id="confirmTitle"></div>
+            <div class="confirm-card-message" id="confirmMessage"></div>
+            <div class="confirm-card-actions">
+                <button class="confirm-btn-cancel" id="confirmCancel">Cancel</button>
+                <button class="confirm-btn-ok" id="confirmOk">Continue</button>
+            </div>
+        </div>
+    </div>
+
     <script src="/js/shared/inline-edit.js"></script>
     <script src="/js/shared/swipe-dismiss.js"></script>
     <script src="/js/shared/urgency.js"></script>
     <script src="/js/capture-actions.js?v=redesign-4"></script>
-    <script src="/js/app.js?v=unified-tags"></script>
+    <script src="/js/app.js?v=sandbox-mode"></script>
 </body>
 </html>
