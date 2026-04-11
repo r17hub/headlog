@@ -295,6 +295,15 @@ function clearSuggestion() {
     if (ghost) ghost.innerHTML = '';
 }
 
+function updateTextareaMirror() {
+    const textarea = document.getElementById('captureInput');
+    const mirror = document.getElementById('textareaMirror');
+    if (!textarea || !mirror) return;
+    const html = escapeHtml(textarea.value).replace(/#\w+/g, '<span class="inline-tag">$&</span>');
+    mirror.innerHTML = html;
+    mirror.scrollTop = textarea.scrollTop;
+}
+
 function acceptSuggestion() {
     if (!currentSuggestion) return false;
 
@@ -372,7 +381,9 @@ async function renderTagPicker() {
     extraGrid.innerHTML =
         extraAvailable.map(tag => renderTagChipButton(tag)).join('') +
         `<button class="tag-chip private-chip" data-tag="private_todo"><span class="tag-chip-dot" style="background:#6B5F56"></span>&#128274; #private_todo</button>` +
-        `<button class="tag-chip private-chip" data-tag="private_reminder"><span class="tag-chip-dot" style="background:#6B5F56"></span>&#128274; #private_reminder</button>`;
+        `<button class="tag-chip private-chip" data-tag="private_reminder"><span class="tag-chip-dot" style="background:#6B5F56"></span>&#128274; #private_reminder</button>` +
+        `<button class="tag-add-chip" id="tagNewBtn" type="button" title="New tag">+</button>` +
+        `<div class="tag-new-inline" id="tagNewInline" style="display:none"><div class="tag-new-container"><input class="tag-new-input" id="tagNewInput" type="text" placeholder="e.g. cricket" maxlength="30" autocomplete="off"><button class="tag-new-confirm" id="tagNewConfirm" type="button" title="Add tag">&#10003;</button><button class="tag-new-cancel" id="tagNewCancel" type="button" title="Cancel">&#215;</button></div></div>`;
 
     if (toggle) {
         toggle.textContent = wasExpanded ? 'fewer tags' : `+${_extraChipCount} more`;
@@ -2402,13 +2413,16 @@ document.addEventListener('DOMContentLoaded', () => {
     textarea.addEventListener('input', () => {
         updateWordCount();
         updateSaveButtonState();
+        updateTextareaMirror();
     });
     textarea.addEventListener('input', updateGhostLayer);
-    textarea.addEventListener('click', updateGhostLayer);
+    textarea.addEventListener('click', () => { updateGhostLayer(); updateTextareaMirror(); });
+    textarea.addEventListener('scroll', updateTextareaMirror);
 
     textarea.addEventListener('keyup', (e) => {
         if (['ArrowLeft','ArrowRight','ArrowUp','ArrowDown','Home','End'].includes(e.key)) {
             updateGhostLayer();
+            updateTextareaMirror();
         }
     });
 

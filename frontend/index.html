@@ -1,202 +1,379 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <meta name="apple-mobile-web-app-capable" content="yes">
-    <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no"
+    />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
     <title>Headlog</title>
-    <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='6' fill='%23B5542A'/><text x='16' y='23' text-anchor='middle' font-family='system-ui,sans-serif' font-size='18' font-weight='700' fill='white'>h</text></svg>">
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Bruno+Ace+SC&family=Capriola&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="/css/base.css?v=redesign-3">
-    <link rel="stylesheet" href="/css/components.css?v=sandbox-mode">
-    <link rel="stylesheet" href="/css/pages.css?v=redesign-3">
-</head>
-<body>
-
+    <link
+      rel="icon"
+      type="image/svg+xml"
+      href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='6' fill='%23B5542A'/><text x='16' y='23' text-anchor='middle' font-family='system-ui,sans-serif' font-size='18' font-weight='700' fill='white'>h</text></svg>"
+    />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Bruno+Ace+SC&family=Capriola&family=Dosis:wght@400;500&family=DM+Sans:wght@400;500&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="/css/base.css?v=redesign-3" />
+    <link rel="stylesheet" href="/css/components.css?v=dosis-panels" />
+    <link rel="stylesheet" href="/css/pages.css?v=dosis-panels" />
+  </head>
+  <body>
     <header class="header">
-        <a class="logo" href="#">
-            <div class="logo-mark"><span>h</span></div>
-            <div class="logo-text">headlog</div>
-        </a>
-        <div id="modeBadge" class="mode-badge-sandbox" style="display:none">&#9879; Sandbox</div>
-        <div class="tab-bar">
-            <button class="tab-btn active" data-view="capture">&#9998; Capture</button>
-            <button class="tab-btn" data-view="browse">&#9638; Browse</button>
-        </div>
-        <button id="settingsBtn" class="settings-btn" aria-label="Settings">
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+      <a class="logo" href="#">
+        <div class="logo-mark"><span>h</span></div>
+        <div class="logo-text">headlog</div>
+      </a>
+      <div id="modeBadge" class="mode-badge-sandbox" style="display: none">
+        &#9879; Sandbox
+      </div>
+      <div class="tab-bar">
+        <button class="tab-btn active" data-view="capture">
+          &#9998; Capture
         </button>
+        <button class="tab-btn" data-view="browse">&#9638; Browse</button>
+      </div>
+      <button id="settingsBtn" class="settings-btn" aria-label="Settings">
+        <svg
+          width="18"
+          height="18"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+        >
+          <circle cx="12" cy="12" r="3" />
+          <path
+            d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"
+          />
+        </svg>
+      </button>
     </header>
 
     <!-- ── Capture View ──────────────────────────────────────── -->
 
     <div class="capture-view view active" id="captureView">
-        <div id="capture-screen" class="capture-layout">
-            <div class="capture-left" id="capture-left">
-                <div class="upcoming-header">
-                    <span class="upcoming-title">Upcoming</span>
-                    <span class="upcoming-count" id="upcoming-count">0</span>
-                </div>
-                <div class="upcoming-scroll" id="upcoming-scroll">
-                    <div class="upcoming-empty" id="upcoming-empty">
-                        <p class="upcoming-empty-text">No reminders or tasks</p>
-                        <p class="upcoming-empty-hint">Type a thought with a deadline and it'll appear here</p>
-                    </div>
-                </div>
+      <div id="capture-screen" class="capture-layout">
+        <div class="capture-left" id="capture-left">
+          <div class="upcoming-header">
+            <span class="upcoming-title">Upcoming</span>
+            <span class="upcoming-count" id="upcoming-count">0</span>
+          </div>
+          <div class="upcoming-scroll" id="upcoming-scroll">
+            <div class="upcoming-empty" id="upcoming-empty">
+              <p class="upcoming-empty-text">No reminders or tasks</p>
+              <p class="upcoming-empty-hint">
+                Type a thought with a deadline and it'll appear here
+              </p>
             </div>
-
-            <div class="capture-center">
-                <div class="morning-briefing" id="morning-briefing" style="display: none;">
-                    <div class="briefing-content">
-                        <span class="briefing-greeting" id="briefing-greeting">Good morning</span>
-                        <span class="briefing-dot">&middot;</span>
-                        <span class="briefing-stat" id="briefing-stat"></span>
-                    </div>
-                    <button class="briefing-dismiss" onclick="dismissBriefing()">&times;</button>
-                </div>
-
-                <div id="captureBox" class="capture-box">
-                    <div class="input-wrapper">
-                        <div class="ghost-layer" id="ghostLayer" aria-hidden="true"></div>
-                        <textarea id="captureInput" class="capture-textarea" placeholder="What's on your mind?" autofocus></textarea>
-                    </div>
-
-                    <div class="priority-pin-row">
-                        <div class="priority-section">
-                            <span class="priority-label">Priority</span>
-                            <button class="priority-btn" type="button" data-priority="p0">P0</button>
-                            <button class="priority-btn" type="button" data-priority="p1">P1</button>
-                            <button class="priority-btn" type="button" data-priority="p2">P2</button>
-                            <span class="priority-descriptor" id="priorityDescriptor"></span>
-                        </div>
-                        <button class="pin-toggle" type="button" id="pinToggle">
-                            <svg class="star-icon" width="13" height="13" viewBox="0 0 16 16" stroke-width="1.5">
-                                <path d="M8 1.5l1.85 4.1L14.5 6.2l-3.35 3 .9 4.6L8 11.5l-4.05 2.3.9-4.6-3.35-3 4.65-.6L8 1.5z" stroke-linejoin="round" stroke-linecap="round" />
-                            </svg>
-                            <span>Pin</span>
-                        </button>
-                    </div>
-
-                    <div class="tag-picker" id="tagPicker">
-                        <div id="chipsDefault" class="tag-picker-grid"></div>
-                        <div id="chipsExtra" class="tag-picker-grid tag-picker-extra"></div>
-                        <div class="tag-picker-footer">
-                            <button id="chipsToggle" class="tag-picker-toggle" type="button">+4 more</button>
-                            <button class="tag-new-btn" id="tagNewBtn" type="button"><strong>+</strong>&nbsp;new tag</button>
-                            <div class="tag-new-inline" id="tagNewInline" style="display:none">
-                                <div class="tag-new-container">
-                                    <input class="tag-new-input" id="tagNewInput" type="text" placeholder="e.g. cricket" maxlength="30" autocomplete="off">
-                                    <button class="tag-new-confirm" id="tagNewConfirm" type="button" title="Add tag">&#10003;</button>
-                                    <button class="tag-new-cancel" id="tagNewCancel" type="button" title="Cancel">&#215;</button>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-
-                    <div class="routine-day-selector" id="routineDaySelector">
-                        <button class="routine-ds-daily active" type="button" id="routineDsDaily" onclick="toggleRoutineDaily()">Daily</button>
-                        <div class="routine-ds-days" id="routineDsDays">
-                            <button class="routine-ds-day" type="button" data-day="0" onclick="toggleRoutineDay(0)">M</button>
-                            <button class="routine-ds-day" type="button" data-day="1" onclick="toggleRoutineDay(1)">T</button>
-                            <button class="routine-ds-day" type="button" data-day="2" onclick="toggleRoutineDay(2)">W</button>
-                            <button class="routine-ds-day" type="button" data-day="3" onclick="toggleRoutineDay(3)">T</button>
-                            <button class="routine-ds-day" type="button" data-day="4" onclick="toggleRoutineDay(4)">F</button>
-                            <button class="routine-ds-day" type="button" data-day="5" onclick="toggleRoutineDay(5)">S</button>
-                            <button class="routine-ds-day" type="button" data-day="6" onclick="toggleRoutineDay(6)">S</button>
-                        </div>
-                    </div>
-
-                    <div class="capture-footer">
-                        <div class="capture-meta">
-                            <span id="wordCount">0 words</span>
-                            <span>&#8984; Enter</span>
-                        </div>
-                        <button id="saveBtn" class="save-btn" type="button">Save Thought</button>
-                    </div>
-                </div>
-
-                <div id="routinesStrip" class="routines-strip" style="display:none">
-                    <div class="routines-header">
-                        <span class="routines-title">Today's Routines</span>
-                        <span class="routines-count" id="routines-count"></span>
-                    </div>
-                    <div class="routines-scroll" id="routines-scroll"></div>
-                </div>
-            </div>
-
-            <div class="capture-right">
-                <!-- ── Notification Stack ─────────────────────── -->
-                <div class="notif-stack">
-                    <div class="notif-stack-header">
-                        <div class="notif-stack-title-row">
-                            <span class="notif-stack-title">Notifications</span>
-                            <span class="notif-badge" id="notif-badge" style="display:none">0</span>
-                        </div>
-                        <button class="notif-clear-all" id="notif-clear-all">Clear all</button>
-                    </div>
-                    <div class="notif-list" id="notif-list">
-                        <div class="notif-empty" id="notif-empty">No notifications yet</div>
-                    </div>
-                </div>
-
-                <div class="right-col-divider"></div>
-
-                <!-- ── Ask Headlog ────────────────────────────── -->
-                <div class="ask-box">
-                    <div class="ask-header">
-                        <svg class="ask-icon" width="12" height="12" viewBox="0 0 20 20">
-                            <path d="M3 14.5V5.5C3 4.4 3.9 3.5 5 3.5H15C16.1 3.5 17 4.4 17 5.5V11.5C17 12.6 16.1 13.5 15 13.5H7L3 16.5V14.5Z"
-                                  stroke="currentColor" stroke-width="1.5" fill="none" stroke-linejoin="round"/>
-                        </svg>
-                        Ask headlog
-                    </div>
-                    <input class="ask-input" id="ask-input" type="text"
-                           placeholder="where are my car keys?"
-                           onkeydown="if(event.key==='Enter')AskHeadlog.send()">
-                    <div class="ask-result" id="ask-result" style="display: none;">
-                        <div class="ask-question" id="ask-question"></div>
-                        <div class="ask-answer" id="ask-answer"></div>
-                        <div class="ask-source" id="ask-source"></div>
-                    </div>
-                    <div class="ask-hint">&#8984;K &middot; searches all your thoughts</div>
-                    <div class="ask-history" id="ask-history"></div>
-                </div>
-            </div>
+          </div>
         </div>
+
+        <div class="capture-center">
+          <div
+            class="morning-briefing"
+            id="morning-briefing"
+            style="display: none"
+          >
+            <div class="briefing-content">
+              <span class="briefing-greeting" id="briefing-greeting"
+                >Good morning</span
+              >
+              <span class="briefing-dot">&middot;</span>
+              <span class="briefing-stat" id="briefing-stat"></span>
+            </div>
+            <button class="briefing-dismiss" onclick="dismissBriefing()">
+              &times;
+            </button>
+          </div>
+
+          <div id="captureBox" class="capture-box">
+            <div class="input-wrapper">
+              <div
+                class="textarea-mirror"
+                id="textareaMirror"
+                aria-hidden="true"
+              ></div>
+              <div class="ghost-layer" id="ghostLayer" aria-hidden="true"></div>
+              <textarea
+                id="captureInput"
+                class="capture-textarea"
+                placeholder="What's on your mind?"
+                autofocus
+              ></textarea>
+            </div>
+
+            <div class="priority-pin-row">
+              <div class="priority-section">
+                <span class="priority-label">Priority</span>
+                <button class="priority-btn" type="button" data-priority="p0">
+                  P0
+                </button>
+                <button class="priority-btn" type="button" data-priority="p1">
+                  P1
+                </button>
+                <button class="priority-btn" type="button" data-priority="p2">
+                  P2
+                </button>
+                <span
+                  class="priority-descriptor"
+                  id="priorityDescriptor"
+                ></span>
+              </div>
+              <button class="pin-toggle" type="button" id="pinToggle">
+                <svg
+                  class="star-icon"
+                  width="13"
+                  height="13"
+                  viewBox="0 0 16 16"
+                  stroke-width="1.5"
+                >
+                  <path
+                    d="M8 1.5l1.85 4.1L14.5 6.2l-3.35 3 .9 4.6L8 11.5l-4.05 2.3.9-4.6-3.35-3 4.65-.6L8 1.5z"
+                    stroke-linejoin="round"
+                    stroke-linecap="round"
+                  />
+                </svg>
+                <span>Pin</span>
+              </button>
+            </div>
+
+            <div class="tag-picker" id="tagPicker">
+              <div id="chipsDefault" class="tag-picker-grid"></div>
+              <div
+                id="chipsExtra"
+                class="tag-picker-grid tag-picker-extra"
+              ></div>
+              <div class="tag-picker-footer">
+                <button
+                  id="chipsToggle"
+                  class="tag-picker-toggle"
+                  type="button"
+                >
+                  +4 more
+                </button>
+              </div>
+            </div>
+
+            <div class="routine-day-selector" id="routineDaySelector">
+              <button
+                class="routine-ds-daily active"
+                type="button"
+                id="routineDsDaily"
+                onclick="toggleRoutineDaily()"
+              >
+                Daily
+              </button>
+              <div class="routine-ds-days" id="routineDsDays">
+                <button
+                  class="routine-ds-day"
+                  type="button"
+                  data-day="0"
+                  onclick="toggleRoutineDay(0)"
+                >
+                  M
+                </button>
+                <button
+                  class="routine-ds-day"
+                  type="button"
+                  data-day="1"
+                  onclick="toggleRoutineDay(1)"
+                >
+                  T
+                </button>
+                <button
+                  class="routine-ds-day"
+                  type="button"
+                  data-day="2"
+                  onclick="toggleRoutineDay(2)"
+                >
+                  W
+                </button>
+                <button
+                  class="routine-ds-day"
+                  type="button"
+                  data-day="3"
+                  onclick="toggleRoutineDay(3)"
+                >
+                  T
+                </button>
+                <button
+                  class="routine-ds-day"
+                  type="button"
+                  data-day="4"
+                  onclick="toggleRoutineDay(4)"
+                >
+                  F
+                </button>
+                <button
+                  class="routine-ds-day"
+                  type="button"
+                  data-day="5"
+                  onclick="toggleRoutineDay(5)"
+                >
+                  S
+                </button>
+                <button
+                  class="routine-ds-day"
+                  type="button"
+                  data-day="6"
+                  onclick="toggleRoutineDay(6)"
+                >
+                  S
+                </button>
+              </div>
+            </div>
+
+            <div class="capture-footer">
+              <div class="capture-meta">
+                <span id="wordCount">0 words</span>
+                <span>&#8984; Enter</span>
+              </div>
+              <button id="saveBtn" class="save-btn" type="button">
+                Save Thought
+              </button>
+            </div>
+          </div>
+
+          <div id="routinesStrip" class="routines-strip" style="display: none">
+            <div class="routines-header">
+              <span class="routines-title">Today's Routines</span>
+              <span class="routines-count" id="routines-count"></span>
+            </div>
+            <div class="routines-scroll" id="routines-scroll"></div>
+          </div>
+        </div>
+
+        <div class="capture-right">
+          <!-- ── Notification Stack ─────────────────────── -->
+          <div class="notif-stack">
+            <div class="notif-stack-header">
+              <div class="notif-stack-title-row">
+                <span class="notif-stack-title">Notifications</span>
+                <span class="notif-badge" id="notif-badge" style="display: none"
+                  >0</span
+                >
+              </div>
+              <button class="notif-clear-all" id="notif-clear-all">
+                Clear all
+              </button>
+            </div>
+            <div class="notif-list" id="notif-list">
+              <div class="notif-empty" id="notif-empty">
+                No notifications yet
+              </div>
+            </div>
+          </div>
+
+          <div class="right-col-divider"></div>
+
+          <!-- ── Ask Headlog ────────────────────────────── -->
+          <div class="ask-box">
+            <div class="ask-header">
+              <svg class="ask-icon" width="12" height="12" viewBox="0 0 20 20">
+                <path
+                  d="M3 14.5V5.5C3 4.4 3.9 3.5 5 3.5H15C16.1 3.5 17 4.4 17 5.5V11.5C17 12.6 16.1 13.5 15 13.5H7L3 16.5V14.5Z"
+                  stroke="currentColor"
+                  stroke-width="1.5"
+                  fill="none"
+                  stroke-linejoin="round"
+                />
+              </svg>
+              Ask headlog
+            </div>
+            <input
+              class="ask-input"
+              id="ask-input"
+              type="text"
+              placeholder="where are my car keys?"
+              onkeydown="if (event.key === 'Enter') AskHeadlog.send();"
+            />
+            <div class="ask-result" id="ask-result" style="display: none">
+              <div class="ask-question" id="ask-question"></div>
+              <div class="ask-answer" id="ask-answer"></div>
+              <div class="ask-source" id="ask-source"></div>
+            </div>
+            <div class="ask-hint">
+              &#8984;K &middot; searches all your thoughts
+            </div>
+            <div class="ask-history" id="ask-history"></div>
+          </div>
+        </div>
+      </div>
     </div>
 
     <!-- ── Browse View ───────────────────────────────────────── -->
 
     <div class="browse-view view" id="browseView">
-        <div class="browse-main">
-            <div class="search-bar">
-                <svg class="search-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/></svg>
-                <input id="searchInput" class="search-input" type="text" placeholder="Search your thoughts...">
-            </div>
-            <div class="browse-sub-tabs">
-                <button class="sub-tab active" data-filter="all">All thoughts</button>
-                <button class="sub-tab" data-filter="reminders">Reminders</button>
-                <button class="sub-tab" data-filter="todos">Todos</button>
-            </div>
-            <div id="tagFilters" class="tag-filters"></div>
-            <div id="thoughtCards" class="thought-cards"></div>
+      <div class="browse-main">
+        <div class="search-bar">
+          <svg
+            class="search-icon"
+            width="16"
+            height="16"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+          >
+            <circle cx="11" cy="11" r="8" />
+            <path d="M21 21l-4.35-4.35" />
+          </svg>
+          <input
+            id="searchInput"
+            class="search-input"
+            type="text"
+            placeholder="Search your thoughts..."
+          />
         </div>
-        <div class="browse-chat-sidebar">
-            <div class="chat-header">
-                <div class="chat-title">Chat with your thoughts</div>
-                <div id="modelBadge" class="model-badge">Ollama 3B</div>
-            </div>
-            <div id="chatMessages" class="chat-messages"></div>
-            <div class="chat-input-area">
-                <input id="chatInput" class="chat-input" type="text" placeholder="Ask about your thoughts...">
-                <button id="chatSend" class="chat-send-btn">
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M22 2L11 13"/><path d="M22 2L15 22L11 13L2 9L22 2Z"/></svg>
-                </button>
-            </div>
+        <div class="browse-sub-tabs">
+          <button class="sub-tab active" data-filter="all">All thoughts</button>
+          <button class="sub-tab" data-filter="reminders">Reminders</button>
+          <button class="sub-tab" data-filter="todos">Todos</button>
         </div>
+        <div id="tagFilters" class="tag-filters"></div>
+        <div id="thoughtCards" class="thought-cards"></div>
+      </div>
+      <div class="browse-chat-sidebar">
+        <div class="chat-header">
+          <div class="chat-title">Chat with your thoughts</div>
+          <div id="modelBadge" class="model-badge">Ollama 3B</div>
+        </div>
+        <div id="chatMessages" class="chat-messages"></div>
+        <div class="chat-input-area">
+          <input
+            id="chatInput"
+            class="chat-input"
+            type="text"
+            placeholder="Ask about your thoughts..."
+          />
+          <button id="chatSend" class="chat-send-btn">
+            <svg
+              width="16"
+              height="16"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2.5"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            >
+              <path d="M22 2L11 13" />
+              <path d="M22 2L15 22L11 13L2 9L22 2Z" />
+            </svg>
+          </button>
+        </div>
+      </div>
     </div>
 
     <!-- ── Toast ─────────────────────────────────────────────── -->
@@ -205,99 +382,153 @@
     <!-- ── Settings Drawer ───────────────────────────────────── -->
     <div id="settingsOverlay" class="settings-overlay"></div>
     <div id="settingsDrawer" class="settings-drawer">
-        <button id="settingsClose" class="settings-close">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6L6 18"/><path d="M6 6l12 12"/></svg>
-        </button>
+      <button id="settingsClose" class="settings-close">
+        <svg
+          width="16"
+          height="16"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+        >
+          <path d="M18 6L6 18" />
+          <path d="M6 6l12 12" />
+        </svg>
+      </button>
 
-        <div class="settings-section">
-            <div class="settings-section-title">AI Provider</div>
-            <div class="radio-group">
-                <div class="settings-row">
-                    <div class="radio-row" data-provider="ollama">
-                        <div class="radio-dot selected"></div>
-                        <div>
-                            <div class="radio-label">Ollama (local)</div>
-                            <div class="settings-desc">llama3.2:3b &mdash; free, fast, no internet needed</div>
-                        </div>
-                    </div>
+      <div class="settings-section">
+        <div class="settings-section-title">AI Provider</div>
+        <div class="radio-group">
+          <div class="settings-row">
+            <div class="radio-row" data-provider="ollama">
+              <div class="radio-dot selected"></div>
+              <div>
+                <div class="radio-label">Ollama (local)</div>
+                <div class="settings-desc">
+                  llama3.2:3b &mdash; free, fast, no internet needed
                 </div>
-                <div class="settings-row">
-                    <div class="radio-row" data-provider="gemini">
-                        <div class="radio-dot"></div>
-                        <div>
-                            <div class="radio-label">Gemini Flash</div>
-                            <div class="settings-desc">Google&rsquo;s Gemini Flash &mdash; free tier available</div>
-                        </div>
-                    </div>
+              </div>
+            </div>
+          </div>
+          <div class="settings-row">
+            <div class="radio-row" data-provider="gemini">
+              <div class="radio-dot"></div>
+              <div>
+                <div class="radio-label">Gemini Flash</div>
+                <div class="settings-desc">
+                  Google&rsquo;s Gemini Flash &mdash; free tier available
                 </div>
-                <div class="settings-row">
-                    <div class="radio-row" data-provider="none">
-                        <div class="radio-dot"></div>
-                        <div>
-                            <div class="radio-label">Disabled</div>
-                            <div class="settings-desc">Keyword tagging only, chat disabled</div>
-                        </div>
-                    </div>
+              </div>
+            </div>
+          </div>
+          <div class="settings-row">
+            <div class="radio-row" data-provider="none">
+              <div class="radio-dot"></div>
+              <div>
+                <div class="radio-label">Disabled</div>
+                <div class="settings-desc">
+                  Keyword tagging only, chat disabled
                 </div>
+              </div>
             </div>
-            <div id="apiKeyRow" class="api-key-row" style="display:none;margin-top:10px">
-                <input id="apiKeyInput" type="password" placeholder="Gemini API key" class="api-key-input">
-                <button id="apiKeySave" class="api-key-save">Save</button>
-            </div>
+          </div>
         </div>
+        <div
+          id="apiKeyRow"
+          class="api-key-row"
+          style="display: none; margin-top: 10px"
+        >
+          <input
+            id="apiKeyInput"
+            type="password"
+            placeholder="Gemini API key"
+            class="api-key-input"
+          />
+          <button id="apiKeySave" class="api-key-save">Save</button>
+        </div>
+      </div>
 
-        <div class="settings-section">
-            <div class="settings-section-title">Routines</div>
-            <div id="routinesManage" class="routines-manage">
-                <div id="routinesManageList" class="routines-manage-list"></div>
-                <div id="routinesManageEmpty" class="routines-manage-empty">No routines yet. Add one by tagging a thought with #routine.</div>
-                <label class="routines-show-archived" id="routinesShowArchivedLabel" style="display:none">
-                    <input type="checkbox" id="routinesShowArchived"> Show archived
-                </label>
-            </div>
+      <div class="settings-section">
+        <div class="settings-section-title">Routines</div>
+        <div id="routinesManage" class="routines-manage">
+          <div id="routinesManageList" class="routines-manage-list"></div>
+          <div id="routinesManageEmpty" class="routines-manage-empty">
+            No routines yet. Add one by tagging a thought with #routine.
+          </div>
+          <label
+            class="routines-show-archived"
+            id="routinesShowArchivedLabel"
+            style="display: none"
+          >
+            <input type="checkbox" id="routinesShowArchived" /> Show archived
+          </label>
         </div>
+      </div>
 
-        <div class="settings-section">
-            <div class="settings-section-title">Data</div>
-            <div class="settings-row" style="padding:16px">
-                <div id="statsDisplay" class="stats-display"></div>
-                <button class="settings-export-btn">Export as JSON</button>
-            </div>
+      <div class="settings-section">
+        <div class="settings-section-title">Data</div>
+        <div class="settings-row" style="padding: 16px">
+          <div id="statsDisplay" class="stats-display"></div>
+          <button class="settings-export-btn">Export as JSON</button>
         </div>
+      </div>
 
-        <div class="settings-section">
-            <div class="settings-section-title">Mode</div>
-            <div class="settings-row mode-setting-row">
-                <div class="mode-setting-info">
-                    <div class="mode-setting-name" id="modeCurrentName">Live</div>
-                    <div class="settings-desc" id="modeCurrentDesc">Your real thoughts and data</div>
-                </div>
-                <button class="mode-switch-btn" id="modeSwitchBtn" type="button">Enter Sandbox</button>
+      <div class="settings-section">
+        <div class="settings-section-title">Mode</div>
+        <div class="settings-row mode-setting-row">
+          <div class="mode-setting-info">
+            <div class="mode-setting-name" id="modeCurrentName">Live</div>
+            <div class="settings-desc" id="modeCurrentDesc">
+              Your real thoughts and data
             </div>
-            <div class="settings-row sandbox-reset-row" id="sandboxResetRow" style="display:none">
-                <div class="settings-desc">Wipes all sandbox thoughts, tags, and journal files. Live data is unaffected.</div>
-                <button class="sandbox-reset-btn" id="sandboxResetBtn" type="button">Reset Sandbox</button>
-            </div>
+          </div>
+          <button class="mode-switch-btn" id="modeSwitchBtn" type="button">
+            Enter Sandbox
+          </button>
         </div>
+        <div
+          class="settings-row sandbox-reset-row"
+          id="sandboxResetRow"
+          style="display: none"
+        >
+          <div class="settings-desc">
+            Wipes all sandbox thoughts, tags, and journal files. Live data is
+            unaffected.
+          </div>
+          <button class="sandbox-reset-btn" id="sandboxResetBtn" type="button">
+            Reset Sandbox
+          </button>
+        </div>
+      </div>
 
-        <div class="settings-section">
-            <div class="settings-section-title">About</div>
-            <p class="settings-about">
-                A raw dump of what&rsquo;s in your head. Headlog captures your thoughts with zero friction &mdash; type, save, move on. Intelligence emerges from the accumulated text over time.
-            </p>
-        </div>
+      <div class="settings-section">
+        <div class="settings-section-title">About</div>
+        <p class="settings-about">
+          A raw dump of what&rsquo;s in your head. Headlog captures your
+          thoughts with zero friction &mdash; type, save, move on. Intelligence
+          emerges from the accumulated text over time.
+        </p>
+      </div>
     </div>
 
     <!-- ── Custom Confirm Modal ──────────────────────────────── -->
-    <div id="confirmOverlay" class="confirm-overlay" style="display:none" aria-modal="true" role="dialog">
-        <div class="confirm-card">
-            <div class="confirm-card-title" id="confirmTitle"></div>
-            <div class="confirm-card-message" id="confirmMessage"></div>
-            <div class="confirm-card-actions">
-                <button class="confirm-btn-cancel" id="confirmCancel">Cancel</button>
-                <button class="confirm-btn-ok" id="confirmOk">Continue</button>
-            </div>
+    <div
+      id="confirmOverlay"
+      class="confirm-overlay"
+      style="display: none"
+      aria-modal="true"
+      role="dialog"
+    >
+      <div class="confirm-card">
+        <div class="confirm-card-title" id="confirmTitle"></div>
+        <div class="confirm-card-message" id="confirmMessage"></div>
+        <div class="confirm-card-actions">
+          <button class="confirm-btn-cancel" id="confirmCancel">Cancel</button>
+          <button class="confirm-btn-ok" id="confirmOk">Continue</button>
         </div>
+      </div>
     </div>
 
     <script src="/js/shared/inline-edit.js"></script>
@@ -305,5 +536,5 @@
     <script src="/js/shared/urgency.js"></script>
     <script src="/js/capture-actions.js?v=redesign-4"></script>
     <script src="/js/app.js?v=sandbox-mode"></script>
-</body>
+  </body>
 </html>
