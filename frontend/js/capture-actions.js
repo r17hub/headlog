@@ -89,6 +89,20 @@ const ActionList = {
     return h > 0 ? `${d}d ${h}h left` : `${d}d left`;
   },
 
+  urgencyBorderColor(tier) {
+    const map = {
+      overdue:  '#dc2626',
+      critical: '#ea580c',
+      hot:      '#ea580c',
+      soon:     '#ca8a04',
+      warming:  '#ca8a04',
+      calm:     '#16a34a',
+      upcoming: '#16a34a',
+      open:     '#B0A99F',
+    };
+    return map[tier] || '#B0A99F';
+  },
+
   render() {
     const scroll = document.getElementById('upcoming-scroll');
     const countEl = document.getElementById('upcoming-count');
@@ -109,10 +123,10 @@ const ActionList = {
 
     const buckets = {
       next_hours: { label: 'Next few hours', items: [], collapsed: false },
-      today: { label: 'Today', items: [], collapsed: false },
-      this_week: { label: 'This week', items: [], collapsed: true },
-      later: { label: 'Later', items: [], collapsed: true },
-      open: { label: 'Open', items: [], collapsed: true },
+      today:      { label: 'Today',          items: [], collapsed: false },
+      this_week:  { label: 'This week',      items: [], collapsed: true  },
+      later:      { label: 'Later',          items: [], collapsed: true  },
+      open:       { label: 'Open',           items: [], collapsed: true  },
     };
 
     for (const item of active) {
@@ -120,54 +134,65 @@ const ActionList = {
       bucket.items.push(item);
     }
 
-    let html = '';
-    const clockSvg = '<svg width="8" height="8" viewBox="0 0 16 16" style="flex-shrink:0"><circle cx="8" cy="8" r="6" stroke="currentColor" stroke-width="1.5" fill="none"/><path d="M8 5V8.5L10.5 10" stroke="currentColor" stroke-width="1.3" fill="none" stroke-linecap="round"/></svg>';
     const checkSvg = '<svg width="10" height="10" viewBox="0 0 12 12"><path d="M2.5 6.5L4.5 8.5L9.5 3.5" stroke="#fff" stroke-width="1.8" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>';
-    const editSvg = '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M11.9 2.3a1.5 1.5 0 0 1 2.1 2.1l-7.6 7.6-3 .9.9-3z"></path><path d="M9.8 4.4l1.8 1.8"></path></svg>';
-    const trashSvg = '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3.5 4.2h9"></path><path d="M6.2 4.2V3.1h3.6v1.1"></path><path d="M5.2 5.2v6.1"></path><path d="M8 5.2v6.1"></path><path d="M10.8 5.2v6.1"></path><path d="M4.4 4.2l.5 8a1 1 0 0 0 1 .9h4.2a1 1 0 0 0 1-.9l.5-8"></path></svg>';
+    const bellOnSvg = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8A6 6 0 006 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 01-3.46 0"/></svg>';
+    const bellOffSvg = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M13.73 21a2 2 0 01-3.46 0"/><path d="M18.63 13A17.89 17.89 0 0018 8"/><path d="M6.26 6.26A5.86 5.86 0 006 8c0 7-3 9-3 9h14"/><path d="M18 8a6 6 0 00-9.33-5"/><path d="M1 1L23 23"/></svg>';
+    const editMenuSvg = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>';
+    const trashMenuSvg = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M8 6V4a1 1 0 011-1h6a1 1 0 011 1v2"/><path d="M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6"/></svg>';
+
+    let html = '';
 
     for (const bucket of Object.values(buckets)) {
       if (bucket.items.length === 0) continue;
       html += `<div class="upcoming-section-label">${bucket.label}</div>`;
+
       for (const item of bucket.items) {
         const isEditing = this.editingId === item.id;
-        const isDeleteConfirm = this.deleteConfirmId === item.id;
-        const collapsedClass = bucket.collapsed ? ' collapsed' : '';
-        const editingClass = isEditing ? ' editing' : '';
-        const deleteClass = isDeleteConfirm ? ' delete-confirming' : '';
-        const deadlineText = item.deadline_label || 'open task';
-        const showClock = item.time_remaining_seconds !== null && item.urgency_state !== 'open';
-        const urgencyTier = item.urgency || item.urgency_state;
-        const deadlineEmoji = urgencyTier === 'overdue' ? '🔥' : urgencyTier === 'critical' ? '⏳' : urgencyTier === 'soon' ? '📌' : urgencyTier === 'upcoming' ? '🗓️' : '';
+        const isMuted = !!item.is_muted;
+        const urgencyTier = item.urgency || item.urgency_state || 'open';
+        const borderColor = isMuted ? '#B4B2A9' : this.urgencyBorderColor(urgencyTier);
+        const mutedClass = isMuted ? ' action-muted' : '';
+        const collapsedClass = (bucket.collapsed && !isEditing) ? ' collapsed' : '';
+        const editingClass = isEditing ? ' action-editing' : '';
         const countdownId = `countdown-${item.id}`;
+        const deadlineText = item.deadline_label || 'open task';
+        const showClock = item.time_remaining_seconds !== null && item.time_remaining_seconds !== undefined && item.urgency_state !== 'open';
+        const countdownText = showClock ? this.formatRemaining(item.time_remaining_seconds, item.urgency_state) : deadlineText;
         const tagHtml = (item.tags || []).slice(0, 2).map(t => `<span class="action-tag">${this.escapeHtml(t)}</span>`).join('');
-        const editingDisabled = this.editingId && !isEditing ? ' disabled' : '';
-        const textHtml = isEditing
-          ? `<textarea class="inline-edit-textarea action-edit-textarea" id="action-edit-${item.id}" rows="3" oninput="ActionList.updateEditDraft(${item.id}, this.value)" onkeydown="ActionList.handleEditKeydown(event, ${item.id})">${this.escapeHtml(this.editDraft)}</textarea>
-             <div class="inline-edit-bar">
-               <span class="inline-edit-wc" id="action-edit-wc-${item.id}">${this.wordCountLabel(this.editDraft)}</span>
-               <div class="inline-edit-btns">
-                 <button class="inline-edit-btn-cancel" type="button" onclick="ActionList.cancelEdit(${item.id})">Cancel</button>
-                 <button class="inline-edit-btn-save" type="button" onclick="ActionList.saveEdit(${item.id})">Save</button>
-               </div>
-             </div>`
-          : `<div class="action-text">${urgencyTier === 'overdue' ? '🔥 ' : ''}${this.escapeHtml(item.text)}</div>
-             <div class="action-meta">
-               <span class="action-deadline">${deadlineEmoji ? deadlineEmoji + ' ' : (showClock ? clockSvg : '')}<span id="${countdownId}">${showClock ? this.formatRemaining(item.time_remaining_seconds, item.urgency_state) : deadlineText}</span></span>
-               <span class="action-type">${item.item_type}</span>
-               ${tagHtml}
-             </div>`;
-        html += `
-          <div class="action-item${collapsedClass}${editingClass}${deleteClass}" data-urgency="${item.urgency || item.urgency_state}" data-thought-id="${item.id}" id="action-${item.id}">
-            <button class="action-check" onclick="ActionList.complete(${item.id})" title="Mark done">${checkSvg}</button>
-            <div class="action-body">
-              ${textHtml}
-            </div>
-            <div class="entry-actions">
-              <button class="entry-action-btn action-entry-btn action-entry-edit${editingDisabled}" type="button" title="Edit" aria-label="Edit item" onclick="ActionList.startEdit(${item.id})">${editSvg}</button>
-              <button class="entry-action-btn action-entry-btn action-entry-delete${isDeleteConfirm ? ' confirm' : ''}" type="button" title="Delete" aria-label="Delete item" onclick="ActionList.confirmDelete(${item.id})">${isDeleteConfirm ? 'Delete?' : trashSvg}</button>
-            </div>
-          </div>`;
+        const bellBtn = `<button class="action-bell${isMuted ? ' muted' : ''}" onclick="ActionList.toggleMute(${item.id},event)" title="${isMuted ? 'Unmute notifications' : 'Mute notifications'}">${isMuted ? bellOffSvg : bellOnSvg}</button>`;
+        const menuBtn = `<button class="action-menu-btn" onclick="ActionList.openMenu(${item.id},event)" title="More options"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="5" r="1" fill="currentColor"/><circle cx="12" cy="12" r="1" fill="currentColor"/><circle cx="12" cy="19" r="1" fill="currentColor"/></svg></button>`;
+
+        if (isEditing) {
+          html += `<div class="action-item${mutedClass}${editingClass}" data-urgency="${urgencyTier}" data-thought-id="${item.id}" id="action-${item.id}" style="--urgency-color:${borderColor}">
+  <textarea class="inline-edit-textarea action-edit-textarea" id="action-edit-${item.id}" rows="3" oninput="ActionList.updateEditDraft(${item.id},this.value)" onkeydown="ActionList.handleEditKeydown(event,${item.id})">${this.escapeHtml(this.editDraft)}</textarea>
+  <div class="inline-edit-bar">
+    <span class="inline-edit-wc" id="action-edit-wc-${item.id}">${this.wordCountLabel(this.editDraft)}</span>
+    <div class="inline-edit-btns">
+      <button class="inline-edit-btn-cancel" type="button" onclick="ActionList.cancelEdit(${item.id})">Cancel</button>
+      <button class="inline-edit-btn-save" type="button" onclick="ActionList.saveEdit(${item.id})">Save</button>
+    </div>
+  </div>
+</div>`;
+        } else {
+          html += `<div class="action-item${mutedClass}${collapsedClass}" data-urgency="${urgencyTier}" data-thought-id="${item.id}" id="action-${item.id}" style="--urgency-color:${borderColor}">
+  <div class="action-row1">
+    <button class="action-check" onclick="ActionList.complete(${item.id})" title="Mark done">${checkSvg}</button>
+    <div class="action-title">${this.escapeHtml(item.text)}</div>
+  </div>
+  <div class="action-row2">
+    <span class="action-deadline" id="${countdownId}">${countdownText}</span>
+    ${tagHtml}
+    <div class="action-row2-right">
+      ${bellBtn}
+      ${menuBtn}
+    </div>
+  </div>
+  <div class="action-overflow-menu" id="action-menu-${item.id}" style="display:none">
+    <button class="action-menu-item action-menu-edit" onclick="ActionList.startEdit(${item.id});ActionList.closeMenu(${item.id})">${editMenuSvg}<span>Edit</span></button>
+    <button class="action-menu-item action-menu-delete" onclick="ActionList.confirmDelete(${item.id});ActionList.closeMenu(${item.id})">${trashMenuSvg}<span>Delete</span></button>
+  </div>
+</div>`;
+        }
       }
     }
 
@@ -367,6 +392,52 @@ const ActionList = {
     }
   },
 
+  async toggleMute(thoughtId, event) {
+    if (event) event.stopPropagation();
+    const item = this.items.find(i => i.id === thoughtId);
+    if (!item) return;
+    const newMuted = !item.is_muted;
+    // Optimistic update
+    item.is_muted = newMuted;
+    this.render();
+    try {
+      const resp = await fetch(captureApi(`/api/thoughts/${thoughtId}/mute`), {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ muted: newMuted }),
+      });
+      if (!resp.ok) throw new Error('Mute failed');
+    } catch (e) {
+      // Revert on failure
+      item.is_muted = !newMuted;
+      this.render();
+      if (window.showToast) window.showToast('Failed to update mute setting');
+    }
+  },
+
+  openMenu(thoughtId, event) {
+    if (event) event.stopPropagation();
+    // Close any other open menus
+    document.querySelectorAll('.action-overflow-menu').forEach(m => {
+      if (m.id !== `action-menu-${thoughtId}`) m.style.display = 'none';
+    });
+    const menu = document.getElementById(`action-menu-${thoughtId}`);
+    if (!menu) return;
+    const isOpen = menu.style.display !== 'none';
+    menu.style.display = isOpen ? 'none' : 'block';
+  },
+
+  closeMenu(thoughtId) {
+    const menu = document.getElementById(`action-menu-${thoughtId}`);
+    if (menu) menu.style.display = 'none';
+  },
+
+  closeAllMenus() {
+    document.querySelectorAll('.action-overflow-menu').forEach(m => {
+      m.style.display = 'none';
+    });
+  },
+
   async undo(thoughtId) {
     try {
       const resp = await fetch(captureApi('/api/thoughts/revive'), {
@@ -539,6 +610,12 @@ function initCaptureScreen() {
   ActionList.init();
   MorningBriefing.maybeShow();
   AskHeadlog.loadHistory();
+  // Close overflow menus when clicking outside
+  document.addEventListener('click', (e) => {
+    if (!e.target.closest('.action-overflow-menu') && !e.target.closest('.action-menu-btn')) {
+      ActionList.closeAllMenus();
+    }
+  });
 }
 
 window.addEventListener('beforeunload', () => {

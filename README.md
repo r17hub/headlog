@@ -11,6 +11,7 @@ ollama serve & python app.py
 ```
 lsof -ti:5959,7777,11434 | xargs kill -9 2>/dev/null; echo "stopped"
 ```
+
 Nuke all Work Trees
 
 git worktree list --porcelain | grep -B2 "claude/" | grep "worktree " | awk '{print $2}' | xargs -I{} git worktree remove {}

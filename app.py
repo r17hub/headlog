@@ -51,6 +51,8 @@ API_PORT = 5959
 FRONTEND_PORT = 7777
 
 PRIVATE_TAGS = {"private_todo", "private_reminder"}
+# Tags always seeded even if not on any thought yet (tied to widget/alarm logic)
+_STRUCTURAL_TAGS = {"todo", "reminder", "private_todo", "private_reminder"}
 
 VALID_PRIORITIES = {"p0", "p1", "p2"}
 _PRIORITY_INLINE_RE = re.compile(r'#(p[0-2])\b', re.IGNORECASE)
@@ -92,12 +94,6 @@ def strip_priority_from_tags(tags_list):
     """Remove any p0/p1/p2 entries from a tags list."""
     return [t for t in tags_list if t.lower() not in VALID_PRIORITIES]
 
-
-VALID_ENRICHMENT_TAGS = {
-    "routine", "health", "finance", "idea", "career", "learning", "tech",
-    "productivity", "spiritual", "reflection", "gratitude", "vent", "lesson",
-    "decision", "question", "todo", "reminder", "people", "selfhelp", "travel",
-}
 
 _enrich_semaphore = threading.Semaphore(3)
 
@@ -253,6 +249,38 @@ def get_db():
     return conn
 
 
+def get_all_tags(conn):
+    """Return all tag names from the unified tags table, sorted alphabetically."""
+    rows = conn.execute("SELECT name FROM tags ORDER BY name").fetchall()
+    return [r["name"] for r in rows]
+
+
+def seed_tags_table(conn):
+    """Populate the tags table on first run from actual thought usage + structural tags."""
+    count = conn.execute("SELECT COUNT(*) FROM tags").fetchone()[0]
+    if count > 0:
+        return  # already seeded
+
+    used = set()
+    rows = conn.execute("SELECT tags FROM thoughts WHERE tags != '[]'").fetchall()
+    for row in rows:
+        try:
+            for t in json.loads(row["tags"]):
+                if re.match(r'^[a-z][a-z0-9_]*$', str(t)):
+                    used.add(t)
+        except Exception:
+            pass
+
+    now = datetime.now().isoformat()
+    for tag in sorted(used | _STRUCTURAL_TAGS):
+        conn.execute(
+            "INSERT OR IGNORE INTO tags (name, created_at) VALUES (?, ?)",
+            (tag, now),
+        )
+    conn.commit()
+    print(f"Tags table seeded with {len(used | _STRUCTURAL_TAGS)} tags.")
+
+
 def init_db():
     conn = get_db()
     conn.execute("""
@@ -388,6 +416,15 @@ def init_db():
         "CREATE INDEX IF NOT EXISTS idx_notif_fired ON notification_events(fired_at)"
     )
 
+    # ── Unified tags table (the tag palette) ─────────────────────
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS tags (
+            name       TEXT PRIMARY KEY,
+            created_at TEXT NOT NULL
+        )
+    """)
+    seed_tags_table(conn)
+
     conn.commit()
     conn.close()
     print(f"Database ready: {DB_PATH}")
@@ -400,6 +437,8 @@ def _row_to_dict(row):
     d["is_muted"] = bool(d.get("is_muted", 0))
     d.setdefault("emoji", None)
     return d
+
+
 
 
 def save_thought(text, tags_list, priority=None):
@@ -1645,13 +1684,25 @@ def ai_enrich_tags(thought_id, text, existing_tags, date_key, created_at, expect
         if provider == "gemini" and not config.get("api_key"):
             return
 
+        conn_ct = get_db()
+        try:
+            all_tag_list = get_all_tags(conn_ct)
+        finally:
+            conn_ct.close()
+        # Exclude private tags, priority tags, and random from AI suggestions
+        ai_excluded = PRIVATE_TAGS | VALID_PRIORITIES | {"random"}
+        enrichable_tags = [t for t in all_tag_list if t not in ai_excluded]
+        dynamic_valid = set(enrichable_tags)
+
+        if not enrichable_tags:
+            return
+
+        tag_list_str = ", ".join(enrichable_tags)
         existing_str = ", ".join(existing_tags) if existing_tags else "none"
         prompt = (
             "You are a tag classifier. Given a personal thought entry, "
             "suggest which tags apply from this EXACT list and no others:\n\n"
-            "routine, health, finance, idea, career, learning, tech, "
-            "productivity, spiritual, reflection, gratitude, vent, lesson, "
-            "decision, question, todo, reminder, people, selfhelp, travel\n\n"
+            f"{tag_list_str}\n\n"
             "Rules:\n"
             "- Return ONLY tag names from the list above, comma-separated, nothing else\n"
             "- Suggest 1-3 tags that capture the MEANING, not just keywords\n"
@@ -1670,7 +1721,7 @@ def ai_enrich_tags(thought_id, text, existing_tags, date_key, created_at, expect
         existing_set = set(existing_tags)
         new_ai_tags = [
             t for t in candidates
-            if t in VALID_ENRICHMENT_TAGS and t not in existing_set
+            if t in dynamic_valid and t not in existing_set
         ]
         new_ai_tags = [t for t in new_ai_tags if t != "routine"]
         if not _allow_ai_action_tags(text):
@@ -1913,11 +1964,22 @@ def quick_ai_classify(text):
     if provider == "gemini" and not config.get("api_key"):
         return None
 
+    conn_ct = get_db()
+    try:
+        all_tag_list = get_all_tags(conn_ct)
+    finally:
+        conn_ct.close()
+    ai_excluded = PRIVATE_TAGS | VALID_PRIORITIES | {"random", "routine"}
+    enrichable_tags = [t for t in all_tag_list if t not in ai_excluded]
+    dynamic_valid = set(enrichable_tags)
+
+    if not enrichable_tags:
+        return None
+
+    tag_list_str = ", ".join(enrichable_tags)
     prompt = (
         "Classify this personal note into 1-2 tags from this EXACT list only:\n\n"
-        "routine, health, finance, idea, career, learning, tech, "
-        "productivity, spiritual, reflection, gratitude, vent, lesson, "
-        "decision, question, todo, reminder, people, selfhelp, travel\n\n"
+        f"{tag_list_str}\n\n"
         "Rules:\n"
         "- Return ONLY comma-separated tag names, nothing else\n"
         "- For action items, tasks, or imperative sentences → todo\n"
@@ -1932,7 +1994,7 @@ def quick_ai_classify(text):
         return None
 
     candidates = [t.strip().lower().rstrip(".") for t in raw.split(",")]
-    valid = [t for t in candidates if t in VALID_ENRICHMENT_TAGS and t != "routine"]
+    valid = [t for t in candidates if t in dynamic_valid]
     if not _allow_ai_action_tags(text):
         valid = [t for t in valid if t not in {"todo", "reminder"}]
     return valid or None
@@ -2020,7 +2082,8 @@ class AlarmScheduler:
 
         try:
             due_rows = conn.execute(
-                "SELECT a.*, t.tags, t.text AS thought_text, t.emoji AS thought_emoji "
+                "SELECT a.*, t.tags, t.text AS thought_text, t.emoji AS thought_emoji, "
+                "t.is_muted AS thought_is_muted "
                 "FROM alarms a JOIN thoughts t ON a.thought_id = t.id "
                 "WHERE a.status = 'pending' AND a.fire_at <= ? "
                 "ORDER BY a.fire_at ASC",
@@ -2033,30 +2096,32 @@ class AlarmScheduler:
 
                 tags = json.loads(alarm["tags"]) if alarm["tags"] else []
                 is_private = bool({"private_reminder", "private_todo"}.intersection(set(tags)))
+                is_muted = bool(alarm["thought_is_muted"])
 
-                if is_private:
-                    title = "🔒 Private reminder"
-                    body = "Tap to view in Headlog"
-                else:
-                    thought_emoji = alarm["thought_emoji"] or ""
-                    base_title = self._zone_title(alarm["zone"], alarm["sequence_index"])
-                    title = f"{thought_emoji} {base_title}".strip() if thought_emoji else base_title
-                    body = alarm["message"]
+                if not is_muted:
+                    if is_private:
+                        title = "🔒 Private reminder"
+                        body = "Tap to view in Headlog"
+                    else:
+                        thought_emoji = alarm["thought_emoji"] or ""
+                        base_title = self._zone_title(alarm["zone"], alarm["sequence_index"])
+                        title = f"{thought_emoji} {base_title}".strip() if thought_emoji else base_title
+                        body = alarm["message"]
 
-                tags_set = set(tags)
-                if alarm["zone"] == "open_todo":
-                    _notif_type = "todo"
-                elif alarm["zone"] == "overdue_repeat":
-                    _notif_type = "overdue"
-                elif "reminder" in tags_set or "private_reminder" in tags_set:
-                    _notif_type = "reminder"
-                elif "todo" in tags_set or "private_todo" in tags_set:
-                    _notif_type = "todo"
-                else:
-                    _notif_type = "alarm"
+                    tags_set = set(tags)
+                    if alarm["zone"] == "open_todo":
+                        _notif_type = "todo"
+                    elif alarm["zone"] == "overdue_repeat":
+                        _notif_type = "overdue"
+                    elif "reminder" in tags_set or "private_reminder" in tags_set:
+                        _notif_type = "reminder"
+                    elif "todo" in tags_set or "private_todo" in tags_set:
+                        _notif_type = "todo"
+                    else:
+                        _notif_type = "alarm"
 
-                fire_notification(title, body, alarm["tone"],
-                                  thought_id=alarm["thought_id"], notif_type=_notif_type)
+                    fire_notification(title, body, alarm["tone"],
+                                      thought_id=alarm["thought_id"], notif_type=_notif_type)
 
                 conn.execute(
                     "UPDATE alarms SET status = 'fired' WHERE id = ?",
@@ -2333,7 +2398,7 @@ class APIHandler(SimpleHTTPRequestHandler):
                         "SELECT a.id, a.thought_id, a.zone, a.tone, a.message, a.fire_at, "
                         "t.text, t.tags, t.is_private "
                         "FROM alarms a JOIN thoughts t ON a.thought_id = t.id "
-                        "WHERE a.status = 'fired' AND a.fire_at >= ? "
+                        "WHERE a.status = 'fired' AND a.fire_at >= ? AND t.is_muted = 0 "
                         "ORDER BY a.fire_at DESC",
                         (five_min_ago,),
                     ).fetchall()
@@ -2424,6 +2489,7 @@ class APIHandler(SimpleHTTPRequestHandler):
                             "id": thought["id"],
                             "text": "🔒 Private" if thought.get("is_private") else thought["text"],
                             "is_private": bool(thought.get("is_private")),
+                            "is_muted": bool(thought.get("is_muted", False)),
                             "tags": [
                                 t for t in tags
                                 if t not in ("todo", "reminder", "private_todo", "private_reminder", "random")
@@ -2704,6 +2770,17 @@ class APIHandler(SimpleHTTPRequestHandler):
             except Exception as e:
                 return self._json_response({"error": str(e)}, 500)
 
+        if path == "/api/tags":
+            try:
+                conn = get_db()
+                try:
+                    tags = get_all_tags(conn)
+                finally:
+                    conn.close()
+                return self._json_response(tags)
+            except Exception as e:
+                return self._json_response({"error": str(e)}, 500)
+
         self.send_error(404)
 
     def do_DELETE(self):
@@ -2823,6 +2900,27 @@ class APIHandler(SimpleHTTPRequestHandler):
             except Exception as e:
                 return self._json_response({"error": str(e)}, 500)
 
+        m = re.match(r'^/api/thoughts/(\d+)/mute$', path)
+        if m:
+            try:
+                thought_id = int(m.group(1))
+                body = json.loads(self.rfile.read(int(self.headers.get("Content-Length", 0))))
+                muted = 1 if body.get("muted", False) else 0
+                conn = get_db()
+                try:
+                    conn.execute("UPDATE thoughts SET is_muted = ? WHERE id = ?", (muted, thought_id))
+                    conn.commit()
+                    row = conn.execute("SELECT * FROM thoughts WHERE id = ?", (thought_id,)).fetchone()
+                finally:
+                    conn.close()
+                if not row:
+                    return self._json_response({"error": "not found"}, 404)
+                return self._json_response(_row_to_dict(row))
+            except json.JSONDecodeError:
+                return self._json_response({"error": "invalid json"}, 400)
+            except Exception as e:
+                return self._json_response({"error": str(e)}, 500)
+
         if path.startswith("/api/thoughts/") and path.endswith("/edit"):
             try:
                 parts = path.strip("/").split("/")
@@ -2860,6 +2958,14 @@ class APIHandler(SimpleHTTPRequestHandler):
                 manual_tags = strip_priority_from_tags(manual_tags)
 
                 detected = auto_tag(text)
+                # Filter keyword-scanner output to tags in the user's palette
+                conn_pt = get_db()
+                try:
+                    palette_tags = set(get_all_tags(conn_pt))
+                finally:
+                    conn_pt.close()
+                detected = [t for t in detected if t in palette_tags or t == "random"]
+
                 final_tags = merge_tags(manual_tags, detected)
 
                 if final_tags == ["random"]:
@@ -3270,6 +3376,32 @@ class APIHandler(SimpleHTTPRequestHandler):
                 finally:
                     conn.close()
                 return self._json_response({"success": True})
+            except Exception as e:
+                return self._json_response({"error": str(e)}, 500)
+
+        if path == "/api/tags":
+            try:
+                body = json.loads(self.rfile.read(int(self.headers.get("Content-Length", 0))))
+                raw = body.get("name", "")
+                # Normalize: lowercase, strip leading #, keep only a-z 0-9 _
+                name = re.sub(r'[^a-z0-9_]', '', raw.strip().lower().lstrip('#'))
+                if not name:
+                    return self._json_response({"error": "Invalid tag name after normalization"}, 400)
+                conn = get_db()
+                try:
+                    existing = conn.execute(
+                        "SELECT name FROM tags WHERE name = ?", (name,)
+                    ).fetchone()
+                    if existing:
+                        return self._json_response({"error": f"Tag '{name}' already exists"}, 409)
+                    conn.execute(
+                        "INSERT INTO tags (name, created_at) VALUES (?, ?)",
+                        (name, datetime.now().isoformat()),
+                    )
+                    conn.commit()
+                finally:
+                    conn.close()
+                return self._json_response({"name": name})
             except Exception as e:
                 return self._json_response({"error": str(e)}, 500)
 

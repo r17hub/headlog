@@ -32,6 +32,7 @@ const TAG_COLORS = {};
 Object.entries(TAG_PALETTE).forEach(([k, v]) => { TAG_COLORS[k] = v.dot; });
 
 const TAG_LABELS = Object.keys(TAG_PALETTE);
+let DYNAMIC_TAG_LABELS = [...TAG_LABELS];
 
 const PRIMARY_TAGS = ['routine', 'health', 'idea', 'tech', 'todo', 'reminder'];
 const EXTRA_TAGS = ['vent', 'reflection', 'learning', 'people'];
@@ -158,7 +159,7 @@ function toggleChipsExpand() {
     const btn = document.getElementById('chipsToggle');
     extra.classList.toggle('expanded');
     btn.textContent = extra.classList.contains('expanded')
-        ? 'fewer tags' : `+${EXTRA_TAGS.length + EXTENDED_TAGS.length} more`;
+        ? 'fewer tags' : `+${_extraChipCount} more`;
 }
 
 
@@ -175,7 +176,7 @@ function getContentAndTagLine(text) {
     const lastLine = lines[lastNonEmptyIdx].trim();
     const tokens = lastLine.split(/\s+/);
     const allTags = tokens.length > 0 && tokens.every(t =>
-        t.startsWith('#') && TAG_LABELS.includes(t.slice(1))
+        t.startsWith('#') && DYNAMIC_TAG_LABELS.includes(t.slice(1))
     );
 
     if (allTags) {
@@ -246,7 +247,7 @@ function extractTagFragment(text, cursorPos) {
 
 function findBestMatch(partial) {
     const selected = new Set(getSelectedTags());
-    const matches = TAG_LABELS
+    const matches = DYNAMIC_TAG_LABELS
         .filter(label => label.startsWith(partial) && !selected.has(label));
     if (matches.length === 0) return null;
     matches.sort((a, b) => a.localeCompare(b));
@@ -337,25 +338,93 @@ function activateChipFromAutocomplete(label) {
 
 /* ── Section 5: Tag Picker Rendering ──────────────────────────── */
 
-function renderTagPicker() {
+let _extraChipCount = EXTRA_TAGS.length + EXTENDED_TAGS.length + 2;
+
+async function renderTagPicker() {
     const defaultGrid = document.getElementById('chipsDefault');
     const extraGrid = document.getElementById('chipsExtra');
+    const toggle = document.getElementById('chipsToggle');
     if (!defaultGrid || !extraGrid) return;
 
-    defaultGrid.innerHTML = PRIMARY_TAGS.map(tag => renderTagChipButton(tag)).join('');
+    // GET /api/tags returns a flat array of tag name strings
+    let allTags = [];
+    try {
+        const resp = await fetch(`${API}/api/tags`);
+        allTags = await resp.json();
+        if (!Array.isArray(allTags)) allTags = [];
+    } catch (_) {
+        allTags = TAG_LABELS; // fallback to static list
+    }
 
-    const allExtra = [...EXTRA_TAGS, ...EXTENDED_TAGS];
-    extraGrid.innerHTML = allExtra.map(tag => renderTagChipButton(tag)).join('') +
+    // Update DYNAMIC_TAG_LABELS for autocomplete (all system tags + DB tags, deduped)
+    DYNAMIC_TAG_LABELS = [...new Set([...TAG_LABELS, ...allTags])];
+
+    // Split into primary (known primary tags present in DB) and extra (everything else)
+    const primaryAvailable = PRIMARY_TAGS.filter(t => allTags.includes(t));
+    const extraAvailable = allTags.filter(
+        t => !PRIMARY_TAGS.includes(t) && t !== 'private_todo' && t !== 'private_reminder'
+    );
+
+    defaultGrid.innerHTML = primaryAvailable.map(tag => renderTagChipButton(tag)).join('');
+
+    _extraChipCount = extraAvailable.length + 2; // +2 private chips
+    const wasExpanded = extraGrid.classList.contains('expanded');
+    extraGrid.innerHTML =
+        extraAvailable.map(tag => renderTagChipButton(tag)).join('') +
         `<button class="tag-chip private-chip" data-tag="private_todo"><span class="tag-chip-dot" style="background:#6B5F56"></span>&#128274; #private_todo</button>` +
         `<button class="tag-chip private-chip" data-tag="private_reminder"><span class="tag-chip-dot" style="background:#6B5F56"></span>&#128274; #private_reminder</button>`;
 
-    const toggle = document.getElementById('chipsToggle');
-    if (toggle) toggle.textContent = `+${allExtra.length + 2} more`;
+    if (toggle) {
+        toggle.textContent = wasExpanded ? 'fewer tags' : `+${_extraChipCount} more`;
+    }
 }
 
 function renderTagChipButton(tag) {
     const palette = TAG_PALETTE[tag] || TAG_PALETTE.random;
     return `<button class="tag-chip" data-tag="${tag}" data-bg="${palette.bg}" data-color="${palette.text}" data-dot="${palette.dot}"><span class="tag-chip-dot" style="background:${palette.dot}"></span>#${tag}</button>`;
+}
+
+async function _saveNewTag() {
+    const input = document.getElementById('tagNewInput');
+    if (!input) return;
+    const rawVal = input.value.trim();
+    if (!rawVal) return;
+    try {
+        const resp = await fetch(`${API}/api/tags`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ name: rawVal }),
+        });
+        let body = {};
+        try { body = await resp.json(); } catch (_) {}
+        if (!resp.ok) {
+            showToast(body.error || 'Failed to create tag');
+            input.classList.add('tag-input-error');
+            setTimeout(() => input.classList.remove('tag-input-error'), 600);
+            return;
+        }
+        const createdName = body.name || rawVal;
+        input.value = '';
+        document.getElementById('tagNewInline').style.display = 'none';
+        document.getElementById('tagNewBtn').style.display = '';
+        await renderTagPicker();
+        // Auto-select the newly created chip (expand extra grid if needed)
+        const newChip = document.querySelector(`.tag-chip[data-tag="${CSS.escape(createdName)}"]`);
+        if (newChip) {
+            const extraGrid = document.getElementById('chipsExtra');
+            if (extraGrid && extraGrid.contains(newChip) && !extraGrid.classList.contains('expanded')) {
+                extraGrid.classList.add('expanded');
+                const toggle = document.getElementById('chipsToggle');
+                if (toggle) toggle.textContent = 'fewer tags';
+            }
+            newChip.classList.add('selected');
+            applyTagChipStyles(newChip);
+            appendTagToTextarea(createdName);
+        }
+    } catch (e) {
+        showToast('Failed to create tag');
+        console.error('_saveNewTag error:', e);
+    }
 }
 
 function applyTagChipStyles(chip) {
@@ -530,7 +599,7 @@ async function saveThought() {
         if (extra && extra.classList.contains('expanded')) {
             extra.classList.remove('expanded');
             const toggle = document.getElementById('chipsToggle');
-            if (toggle) toggle.textContent = `+${EXTRA_TAGS.length + EXTENDED_TAGS.length + 2} more`;
+            if (toggle) toggle.textContent = `+${_extraChipCount} more`;
         }
 
         const tagStr = data.thought.tags.map(t => `#${t}`).join(', ');
@@ -2314,6 +2383,27 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     document.getElementById('tagPicker').addEventListener('click', e => {
+        // "+ new tag" button → show inline input
+        if (e.target.closest('#tagNewBtn')) {
+            document.getElementById('tagNewInline').style.display = '';
+            document.getElementById('tagNewBtn').style.display = 'none';
+            document.getElementById('tagNewInput')?.focus();
+            return;
+        }
+        // Confirm new tag
+        if (e.target.closest('#tagNewConfirm')) {
+            _saveNewTag();
+            return;
+        }
+        // Cancel new tag
+        if (e.target.closest('#tagNewCancel')) {
+            document.getElementById('tagNewInline').style.display = 'none';
+            document.getElementById('tagNewBtn').style.display = '';
+            const inp = document.getElementById('tagNewInput');
+            if (inp) inp.value = '';
+            return;
+        }
+        // Chip toggle
         const chip = e.target.closest('.tag-chip');
         if (!chip) return;
         const wasSelected = chip.classList.contains('selected');
@@ -2327,6 +2417,12 @@ document.addEventListener('DOMContentLoaded', () => {
             appendTagToTextarea(tag);
             if (tag === 'routine') showRoutineDaySelector();
         }
+    });
+
+    document.getElementById('tagPicker').addEventListener('keydown', e => {
+        if (!e.target.matches('#tagNewInput')) return;
+        if (e.key === 'Enter') { e.preventDefault(); _saveNewTag(); }
+        if (e.key === 'Escape') { document.getElementById('tagNewCancel')?.click(); }
     });
 
     document.getElementById('chipsToggle').addEventListener('click', toggleChipsExpand);

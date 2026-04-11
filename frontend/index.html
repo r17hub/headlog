@@ -11,7 +11,7 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Bruno+Ace+SC&family=Capriola&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="/css/base.css?v=redesign-3">
-    <link rel="stylesheet" href="/css/components.css?v=redesign-3">
+    <link rel="stylesheet" href="/css/components.css?v=unified-tags">
     <link rel="stylesheet" href="/css/pages.css?v=redesign-3">
 </head>
 <body>
@@ -82,7 +82,17 @@
                     <div class="tag-picker" id="tagPicker">
                         <div id="chipsDefault" class="tag-picker-grid"></div>
                         <div id="chipsExtra" class="tag-picker-grid tag-picker-extra"></div>
-                        <button id="chipsToggle" class="tag-picker-toggle" type="button">+4 more</button>
+                        <div class="tag-picker-footer">
+                            <button id="chipsToggle" class="tag-picker-toggle" type="button">+4 more</button>
+                            <button class="tag-new-btn" id="tagNewBtn" type="button"><strong>+</strong>&nbsp;new tag</button>
+                            <div class="tag-new-inline" id="tagNewInline" style="display:none">
+                                <div class="tag-new-container">
+                                    <input class="tag-new-input" id="tagNewInput" type="text" placeholder="e.g. cricket" maxlength="30" autocomplete="off">
+                                    <button class="tag-new-confirm" id="tagNewConfirm" type="button" title="Add tag">&#10003;</button>
+                                    <button class="tag-new-cancel" id="tagNewCancel" type="button" title="Cancel">&#215;</button>
+                                </div>
+                            </div>
+                        </div>
                     </div>
 
                     <div class="routine-day-selector" id="routineDaySelector">
@@ -266,6 +276,6 @@
     <script src="/js/shared/swipe-dismiss.js"></script>
     <script src="/js/shared/urgency.js"></script>
     <script src="/js/capture-actions.js?v=redesign-4"></script>
-    <script src="/js/app.js"></script>
+    <script src="/js/app.js?v=unified-tags"></script>
 </body>
 </html>
