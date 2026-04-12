@@ -390,8 +390,26 @@ async function renderTagPicker() {
     }
 }
 
+const _CUSTOM_TAG_PALETTE_POOL = [
+    { bg: '#EDE8F5', text: '#6B52A3', dot: '#7C5FC2' },
+    { bg: '#E6F0FA', text: '#3B6FA8', dot: '#4A80C0' },
+    { bg: '#E8F5EE', text: '#2D7A5A', dot: '#3D8B6E' },
+    { bg: '#FCE8E6', text: '#A8453B', dot: '#C44B3F' },
+    { bg: '#FFF3E6', text: '#A66B1A', dot: '#C47A20' },
+    { bg: '#E8EEF5', text: '#4A6090', dot: '#5A72A5' },
+    { bg: '#F5F0E6', text: '#8A7340', dot: '#A68B4D' },
+    { bg: '#F5E8E8', text: '#A05050', dot: '#B86060' },
+];
+
+function getTagPalette(tag) {
+    if (TAG_PALETTE[tag]) return TAG_PALETTE[tag];
+    let hash = 0;
+    for (let i = 0; i < tag.length; i++) hash = (hash * 31 + tag.charCodeAt(i)) & 0xFFFF;
+    return _CUSTOM_TAG_PALETTE_POOL[hash % _CUSTOM_TAG_PALETTE_POOL.length];
+}
+
 function renderTagChipButton(tag) {
-    const palette = TAG_PALETTE[tag] || TAG_PALETTE.random;
+    const palette = getTagPalette(tag);
     return `<button class="tag-chip" data-tag="${tag}" data-bg="${palette.bg}" data-color="${palette.text}" data-dot="${palette.dot}"><span class="tag-chip-dot" style="background:${palette.dot}"></span>#${tag}</button>`;
 }
 
@@ -444,10 +462,12 @@ function applyTagChipStyles(chip) {
         chip.style.background = chip.dataset.bg || '#F0ECE6';
         chip.style.color = chip.dataset.color || '#A89E95';
         chip.style.opacity = '1';
+        chip.style.border = `1.5px solid ${chip.dataset.dot || chip.dataset.color || '#A89E95'}`;
     } else {
         chip.style.background = '';
         chip.style.color = '';
         chip.style.opacity = '';
+        chip.style.border = '';
     }
 }
 
@@ -644,7 +664,7 @@ function showToast(message) {
 /* ── Section 7: Tag Pill Rendering (inline in lists) ──────────── */
 
 function renderTagPill(tag) {
-    const p = TAG_PALETTE[tag] || TAG_PALETTE.random;
+    const p = getTagPalette(tag);
     return `<span class="tag-pill" style="background:${p.bg};color:${p.text}"><span class="pill-dot" style="background:${p.dot}"></span>${escapeHtml(tag)}</span>`;
 }
 
@@ -2000,7 +2020,7 @@ async function loadTagFilters() {
         );
 
         container.innerHTML = sorted.map(([tag, count]) => {
-            const p = TAG_PALETTE[tag] || TAG_PALETTE.random;
+            const p = getTagPalette(tag);
             const cls = active.has(tag) ? ' active-filter' : '';
             return `<button class="browse-tag-pill${cls}" data-tag="${tag}"
                 style="background:${hexToRgba(p.dot, 0.10)};color:${p.dot}">
@@ -2072,7 +2092,7 @@ function renderThoughtCards(thoughts, highlightQuery) {
         const tagPills = t.tags
             .filter(tag => !(tag === 'random' && t.tags.length > 1))
             .map(tag => {
-                const p = TAG_PALETTE[tag] || TAG_PALETTE.random;
+                const p = getTagPalette(tag);
                 return `<span class="thought-tag" style="background:${hexToRgba(p.dot, 0.10)};color:${p.dot}">#${escapeHtml(tag)}</span>`;
             }).join('');
 
@@ -2154,7 +2174,7 @@ async function loadMoreThoughts() {
             const tagPills = t.tags
                 .filter(tag => !(tag === 'random' && t.tags.length > 1))
                 .map(tag => {
-                    const p = TAG_PALETTE[tag] || TAG_PALETTE.random;
+                    const p = getTagPalette(tag);
                     return `<span class="thought-tag" style="background:${hexToRgba(p.dot, 0.10)};color:${p.dot}">#${escapeHtml(tag)}</span>`;
                 }).join('');
 
