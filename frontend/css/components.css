@@ -28,7 +28,6 @@
   color: transparent;
   caret-color: var(--text-primary);
   width: 100%;
-  min-height: 100px;
   padding: 0;
   border: none;
   outline: none;
@@ -36,6 +35,26 @@
   background: transparent;
   white-space: pre-wrap;
   overflow-wrap: break-word;
+  overflow-y: hidden;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(181, 82, 58, 0.28) transparent;
+}
+
+.capture-textarea::-webkit-scrollbar {
+  width: 4px;
+}
+
+.capture-textarea::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.capture-textarea::-webkit-scrollbar-thumb {
+  background: rgba(181, 82, 58, 0.28);
+  border-radius: 2px;
+}
+
+.capture-textarea::-webkit-scrollbar-thumb:hover {
+  background: rgba(181, 82, 58, 0.5);
 }
 
 .capture-textarea::placeholder {
@@ -93,8 +112,12 @@
 .ghost-layer .ghost-match {
   color: transparent;
 }
+.ghost-layer .ghost-match * {
+  color: transparent;
+}
 .ghost-layer .ghost-completion {
-  color: var(--text-faint);
+  color: rgba(181, 82, 58, 0.38);
+  opacity: 1;
 }
 
 /* ── Priority + Pin Row ───────────────────────────────────────── */
@@ -708,6 +731,8 @@
   color: var(--text-primary);
   line-height: 1.5;
   margin-top: 6px;
+  white-space: pre-wrap;
+  overflow-wrap: break-word;
 }
 
 .empty-message {
@@ -806,6 +831,8 @@
   font-weight: 400;
   color: var(--text-primary);
   line-height: 1.5;
+  white-space: pre-wrap;
+  overflow-wrap: break-word;
 }
 
 .todo-tags {
@@ -1014,6 +1041,8 @@
   color: var(--text-primary);
   line-height: 1.5;
   margin-top: 6px;
+  white-space: pre-wrap;
+  overflow-wrap: break-word;
 }
 
 /* ── Toast ────────────────────────────────────────────────────── */
@@ -1811,6 +1840,8 @@
   font-weight: 400;
   color: var(--text-primary);
   line-height: 1.65;
+  white-space: pre-wrap;
+  overflow-wrap: break-word;
 }
 
 .thought-text mark {

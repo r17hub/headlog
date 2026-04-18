@@ -99,7 +99,6 @@ def strip_priority_from_tags(tags_list):
 _enrich_semaphore = threading.Semaphore(3)
 
 KEYWORD_MAP = {
-    "routine":      ["routine", "morning", "evening", "habit", "wake up", "alarm", "daily", "night", "bedtime", "breakfast", "shower"],
     "health":       ["exercise", "workout", "protein", "sleep", "meditate", "stretch", "doctor", "gym", "calories", "nutrition", "diet", "yoga", "running", "weight", "mental health", "therapy", "anxiety", "headache", "sick", "medicine", "walk"],
     "finance":      ["money", "budget", "invest", "salary", "tax", "crypto", "stock", "spending", "savings", "expense", "income", "portfolio", "mutual fund", "sip", "emi", "rent", "insurance", "retirement", "debt", "credit"],
     "idea":         ["idea", "what if", "brainstorm", "startup", "side project", "launch", "concept", "experiment", "prototype", "build", "create", "invent", "innovation"],
@@ -120,6 +119,9 @@ KEYWORD_MAP = {
     "selfhelp":     ["improve", "discipline", "willpower", "growth", "confidence", "accountability", "mindset", "self care", "boundaries", "assertive", "emotional intelligence", "journaling", "affirmation", "visualization", "resilience"],
     "travel":       ["travel", "trip", "vacation", "flight", "bucket list", "adventure", "trek", "hike", "destination", "passport", "visa", "hotel", "airbnb", "itinerary", "explore", "road trip", "backpack"],
 }
+
+# Tags that should only ever be user-selected (chip or inline).
+_MANUAL_ONLY_TAGS = {"routine"}
 
 # Precompile matchers: short single words (≤4 chars) use \b regex,
 # longer words and multi-word phrases use substring matching.
@@ -211,6 +213,7 @@ def auto_tag(text):
     if _DEADLINE_RE.search(lower) and "todo" not in tags and "reminder" not in tags:
         tags.append("todo")
 
+    tags = [tag for tag in tags if tag not in _MANUAL_ONLY_TAGS]
     return tags if tags else ["random"]
 
 
@@ -514,6 +517,15 @@ def _normalize_notification_text(title, message):
     return safe_title, safe_message
 
 
+def _truncate_notification_message(text, max_len=80, fallback="Reminder"):
+    compact = " ".join((text or "").split()).strip()
+    if not compact:
+        return fallback
+    if len(compact) > max_len:
+        return compact[: max_len - 3].rstrip() + "..."
+    return compact
+
+
 def _send_macos_notification(title, message):
     try:
         script_lines = [
@@ -581,8 +593,7 @@ def fire_notification(title, message, tone="gentle", thought_id=None, notif_type
             args=(safe_title, safe_message),
             daemon=True,
         ).start()
-    combined = f"{safe_title} \u2014 {safe_message}" if safe_title != safe_message else safe_message
-    _record_notification(combined, notif_type, thought_id)
+    _record_notification(safe_message, notif_type, thought_id)
 
 
 def _alarms_table_exists(conn):
@@ -2086,6 +2097,7 @@ class AlarmScheduler:
     def _check_and_fire(self):
         now = datetime.now()
         now_iso = now.isoformat()
+        cfg = get_alarm_config()
         conn = sqlite3.connect(self.db_path)
         conn.row_factory = sqlite3.Row
         conn.execute("PRAGMA journal_mode=WAL")
@@ -2093,7 +2105,8 @@ class AlarmScheduler:
         try:
             due_rows = conn.execute(
                 "SELECT a.*, t.tags, t.text AS thought_text, t.emoji AS thought_emoji, "
-                "t.is_muted AS thought_is_muted "
+                "t.is_muted AS thought_is_muted, t.priority AS thought_priority, "
+                "t.created_at AS thought_created_at "
                 "FROM alarms a JOIN thoughts t ON a.thought_id = t.id "
                 "WHERE a.status = 'pending' AND a.fire_at <= ? "
                 "ORDER BY a.fire_at ASC",
@@ -2109,14 +2122,42 @@ class AlarmScheduler:
                 is_muted = bool(alarm["thought_is_muted"])
 
                 if not is_muted:
+                    # Title: priority prefix (if any) + zone label
+                    priority_raw = (alarm["thought_priority"] or "").strip().lower()
+                    priority_prefix = priority_raw.upper() if priority_raw in ("p0", "p1", "p2") else None
+                    zone_label = self._zone_notification_label(alarm["zone"])
+                    title = f"{priority_prefix} — {zone_label}" if priority_prefix else zone_label
+
+                    # Body: thought preview, with overdue suffix when past anchor.
+                    overdue_suffix = ""
+                    try:
+                        urgency = _compute_urgency(
+                            {"text": alarm["thought_text"] or "", "created_at": alarm["thought_created_at"]},
+                            now,
+                            cfg,
+                        )
+                        remaining = urgency.get("time_remaining_seconds")
+                        if remaining is not None and remaining < 0:
+                            mins_overdue = int((abs(int(remaining)) + 59) // 60)
+                            if mins_overdue >= 60:
+                                h = mins_overdue // 60
+                                m = mins_overdue % 60
+                                overdue_str = f"{h}h {m}m" if m else f"{h}h"
+                            else:
+                                overdue_str = f"{mins_overdue}m"
+                            overdue_suffix = f" — {overdue_str} overdue"
+                    except Exception:
+                        overdue_suffix = ""
+
                     if is_private:
-                        title = "🔒 Private reminder"
-                        body = "Tap to view in Headlog"
+                        body = f"🔒 Private — tap to view in Headlog{overdue_suffix}"
                     else:
-                        thought_emoji = alarm["thought_emoji"] or ""
-                        base_title = self._zone_title(alarm["zone"], alarm["sequence_index"])
-                        title = f"{thought_emoji} {base_title}".strip() if thought_emoji else base_title
-                        body = alarm["message"]
+                        preview = _truncate_notification_message(
+                            alarm["thought_text"],
+                            max_len=80,
+                            fallback="",
+                        ) or _truncate_notification_message(alarm["message"], max_len=80)
+                        body = f"{preview}{overdue_suffix}"
 
                     tags_set = set(tags)
                     if alarm["zone"] == "open_todo":
@@ -2282,6 +2323,20 @@ class AlarmScheduler:
                 3: "💭 10 days",
                 4: "💭 3 weeks — act or drop?",
             }.get(int(seq), "💭 Todo")
+        return "🔔 Reminder"
+
+    def _zone_notification_label(self, zone):
+        """Short, zone-level label for macOS Notification Center banners."""
+        if zone == "pinned":
+            return "⏱ Reminder"
+        if zone == "day_bound":
+            return "📋 Deadline"
+        if zone == "soft":
+            return "☀️ On your plate"
+        if zone == "open_todo":
+            return "💭 Open todo"
+        if zone == "overdue_repeat":
+            return "🅾️ Still pending"
         return "🔔 Reminder"
 
     def _in_quiet_hours(self, now):
@@ -2469,21 +2524,24 @@ class APIHandler(SimpleHTTPRequestHandler):
 
         if path == "/api/alarms/active":
             try:
-                five_min_ago = (datetime.now() - timedelta(minutes=5)).isoformat()
+                thirty_min_ago = (datetime.now() - timedelta(minutes=30)).isoformat()
                 conn = get_db()
                 try:
                     rows = conn.execute(
                         "SELECT a.id, a.thought_id, a.zone, a.tone, a.message, a.fire_at, "
-                        "t.text, t.tags, t.is_private "
+                        "t.text AS thought_text, t.tags AS thought_tags, t.is_private AS thought_is_private, "
+                        "t.priority AS thought_priority "
                         "FROM alarms a JOIN thoughts t ON a.thought_id = t.id "
                         "WHERE a.status = 'fired' AND a.fire_at >= ? AND t.is_muted = 0 "
                         "ORDER BY a.fire_at DESC",
-                        (five_min_ago,),
+                        (thirty_min_ago,),
                     ).fetchall()
                     alarms = []
                     for row in rows:
-                        tags = json.loads(row["tags"]) if row["tags"] else []
+                        tags = json.loads(row["thought_tags"]) if row["thought_tags"] else []
                         is_private = bool({"private_reminder", "private_todo"}.intersection(set(tags)))
+                        priority_raw = (row["thought_priority"] or "").strip().lower() if row["thought_priority"] else None
+                        priority_level = {"p0": 0, "p1": 1, "p2": 2}.get(priority_raw) if priority_raw else None
                         alarms.append(
                             {
                                 "id": row["id"],
@@ -2492,8 +2550,14 @@ class APIHandler(SimpleHTTPRequestHandler):
                                 "tone": row["tone"],
                                 "message": row["message"],
                                 "fire_at": row["fire_at"],
-                                "text": "🔒 Private reminder" if is_private else row["text"],
+                                # Back-compat: keep legacy `text` masked for private.
+                                "text": "🔒 Private reminder" if is_private else row["thought_text"],
                                 "is_private": is_private,
+                                # Additive fields for richer UIs.
+                                "thought_text": row["thought_text"],
+                                "tags": tags,
+                                "priority": priority_level,
+                                "priority_key": priority_raw,
                             }
                         )
                 finally:
@@ -2826,6 +2890,181 @@ class APIHandler(SimpleHTTPRequestHandler):
                     enrich_thought_alarm_fields([thought])
                     return self._json_response(thought)
                 return self._json_response({"error": "not found"}, 404)
+            except Exception as e:
+                return self._json_response({"error": str(e)}, 500)
+
+        if path == "/api/notifications/grouped":
+            try:
+                now = datetime.now()
+                window_start = (now - timedelta(minutes=30)).isoformat()
+                cfg = get_alarm_config()
+
+                conn = get_db()
+                try:
+                    if not _alarms_table_exists(conn):
+                        return self._json_response(
+                            {
+                                "groups": [],
+                                "counts": {"overdue": 0, "active": 0, "resolved": 0, "total": 0},
+                                "window_minutes": 30,
+                                "generated_at": now.strftime("%Y-%m-%dT%H:%M:%S"),
+                            }
+                        )
+
+                    rows = conn.execute(
+                        """
+                        SELECT
+                          a.id AS alarm_id,
+                          a.thought_id,
+                          a.zone,
+                          a.sequence_index,
+                          a.fire_at,
+                          a.status AS alarm_status,
+                          t.text AS thought_text,
+                          t.tags AS thought_tags,
+                          t.is_private AS thought_is_private,
+                          t.priority AS thought_priority,
+                          t.status AS thought_status,
+                          t.created_at AS thought_created_at
+                        FROM alarms a
+                        JOIN thoughts t ON a.thought_id = t.id
+                        WHERE t.is_muted = 0
+                          AND a.fire_at >= ?
+                          AND a.status IN ('fired', 'dismissed')
+                        ORDER BY a.fire_at DESC
+                        """,
+                        (window_start,),
+                    ).fetchall()
+                finally:
+                    conn.close()
+
+                groups_by_thought = {}
+
+                for r in rows:
+                    thought_id = int(r["thought_id"])
+                    g = groups_by_thought.get(thought_id)
+
+                    if not g:
+                        tags = json.loads(r["thought_tags"]) if r["thought_tags"] else []
+                        is_private = bool({"private_reminder", "private_todo"}.intersection(set(tags))) or bool(
+                            r["thought_is_private"]
+                        )
+                        thought_text = r["thought_text"] or ""
+                        preview = (
+                            "🔒 Private reminder"
+                            if is_private
+                            else _truncate_notification_message(thought_text, max_len=80, fallback="Reminder")
+                        )
+
+                        priority_raw = (
+                            (r["thought_priority"] or "").strip().lower() if r["thought_priority"] else None
+                        )
+                        priority_level = {"p0": 0, "p1": 1, "p2": 2}.get(priority_raw) if priority_raw else None
+
+                        thought_status = (r["thought_status"] or "active").strip() if r["thought_status"] else "active"
+
+                        try:
+                            urgency = _compute_urgency(
+                                {"text": thought_text, "created_at": r["thought_created_at"]},
+                                now,
+                                cfg,
+                            )
+                        except Exception:
+                            urgency = {
+                                "zone": None,
+                                "deadline_label": None,
+                                "urgency_ratio": 0.0,
+                                "urgency_state": "open",
+                                "time_remaining_seconds": None,
+                                "anchor_iso": None,
+                            }
+
+                        g = {
+                            "thought_id": thought_id,
+                            "thought_text": thought_text,
+                            "preview": preview,
+                            "priority_key": priority_raw,
+                            "priority": priority_level,
+                            "is_private": is_private,
+                            "tags": tags,
+                            "thought_status": thought_status,
+                            "alarm_count": 0,
+                            "most_recent_fire_at": None,
+                            "alarm_ids": [],
+                            "active_alarm_ids": [],
+                            "most_recent_active_alarm_id": None,
+                            "most_recent_active_fire_at": None,
+                            "zone": None,
+                            "deadline_label": urgency.get("deadline_label"),
+                            "anchor_iso": urgency.get("anchor_iso"),
+                            "time_remaining_seconds": urgency.get("time_remaining_seconds"),
+                            "urgency_state": urgency.get("urgency_state"),
+                        }
+                        groups_by_thought[thought_id] = g
+
+                    alarm_id = int(r["alarm_id"])
+                    fire_at = r["fire_at"]
+
+                    g["alarm_ids"].append(alarm_id)
+                    g["alarm_count"] += 1
+
+                    if not g["most_recent_fire_at"] or (fire_at and fire_at > g["most_recent_fire_at"]):
+                        g["most_recent_fire_at"] = fire_at
+                        g["zone"] = r["zone"]
+
+                    if r["alarm_status"] == "fired":
+                        g["active_alarm_ids"].append(alarm_id)
+                        if not g["most_recent_active_fire_at"] or (fire_at and fire_at > g["most_recent_active_fire_at"]):
+                            g["most_recent_active_fire_at"] = fire_at
+                            g["most_recent_active_alarm_id"] = alarm_id
+
+                out = []
+                counts = {"overdue": 0, "active": 0, "resolved": 0, "total": 0}
+
+                for g in groups_by_thought.values():
+                    # Resolved if the thought is done/archived OR it has no active fired alarms.
+                    is_resolved = (g["thought_status"] in ("done", "archived")) or (len(g["active_alarm_ids"]) == 0)
+
+                    if is_resolved:
+                        g["urgency"] = "resolved"
+                        g["minutes_overdue"] = 0
+                        counts["resolved"] += 1
+                    else:
+                        remaining = g.get("time_remaining_seconds")
+                        is_overdue = (remaining is not None and remaining <= 0) or (g.get("zone") == "overdue_repeat")
+
+                        if is_overdue:
+                            g["urgency"] = "overdue"
+                            if remaining is not None and remaining <= 0:
+                                g["minutes_overdue"] = int((abs(int(remaining)) + 59) // 60)
+                            else:
+                                try:
+                                    last_fire = datetime.fromisoformat(g["most_recent_active_fire_at"])
+                                    g["minutes_overdue"] = int(((now - last_fire).total_seconds() + 59) // 60)
+                                except Exception:
+                                    g["minutes_overdue"] = 0
+                            counts["overdue"] += 1
+                        else:
+                            g["urgency"] = "active"
+                            g["minutes_overdue"] = 0
+                            counts["active"] += 1
+
+                    out.append(g)
+
+                # Sort within sections by most recent fire, newest first.
+                out.sort(key=lambda g: g.get("most_recent_fire_at") or "", reverse=True)
+                order = {"overdue": 0, "active": 1, "resolved": 2}
+                out.sort(key=lambda g: order.get(g.get("urgency"), 9))
+
+                counts["total"] = len(out)
+                return self._json_response(
+                    {
+                        "groups": out,
+                        "counts": counts,
+                        "window_minutes": 30,
+                        "generated_at": now.strftime("%Y-%m-%dT%H:%M:%S"),
+                    }
+                )
             except Exception as e:
                 return self._json_response({"error": str(e)}, 500)
 
@@ -3234,7 +3473,7 @@ class APIHandler(SimpleHTTPRequestHandler):
                     seq = int(alarm["sequence_index"])
                     snooze_count = int(alarm["snooze_count"])
 
-                    max_snoozes = {"pinned": 1, "day_bound": 2, "soft": 1, "open_todo": 0}
+                    max_snoozes = {"pinned": 1, "day_bound": 2, "soft": 1, "overdue_repeat": 3, "open_todo": 0}
                     if snooze_count >= max_snoozes.get(zone, 0):
                         return self._json_response({"error": "Max snoozes reached"}, 400)
 
@@ -3244,6 +3483,8 @@ class APIHandler(SimpleHTTPRequestHandler):
                         snooze_mins = 60
                     elif zone == "soft":
                         snooze_mins = {1: 120, 2: 60, 3: 30}.get(seq, 60)
+                    elif zone == "overdue_repeat":
+                        snooze_mins = 30
                     else:
                         return self._json_response({"error": "Open todos cannot be snoozed"}, 400)
 

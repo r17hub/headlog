@@ -93,6 +93,47 @@ function escapeAttr(str) {
             .replace(/\n/g, '&#10;');
 }
 
+/* ── UI SFX (additive) ────────────────────────────────────────── */
+
+const SFX = (() => {
+    const FILES = {
+        done: 'ui-done.mp3',
+        dismiss: 'ui-dismiss.mp3',
+        swooshOut: 'ui-swoosh-out.mp3',
+        swooshIn: 'ui-swoosh-in.mp3',
+        save: 'ui-save.mp3',
+    };
+
+    const cache = new Map();
+
+    function _audio(name) {
+        if (cache.has(name)) return cache.get(name);
+        const file = FILES[name];
+        if (!file) return null;
+        const a = new Audio(`/assets/sfx/${file}`);
+        a.preload = 'auto';
+        cache.set(name, a);
+        return a;
+    }
+
+    function play(name) {
+        try {
+            const a = _audio(name);
+            if (!a) return;
+            a.currentTime = 0;
+            a.play().catch(() => {});
+        } catch (_) {}
+    }
+
+    return {
+        done: () => play('done'),
+        dismiss: () => play('dismiss'),
+        swooshOut: () => play('swooshOut'),
+        swooshIn: () => play('swooshIn'),
+        save: () => play('save'),
+    };
+})();
+
 function starSVG(active) {
     const fill = active ? '#D4940E' : 'none';
     const stroke = active ? '#D4940E' : '#C8BFB6';
@@ -117,6 +158,12 @@ function switchView(view) {
     } else if (view === 'browse') {
         try { if (typeof renderBrowseView === 'function') renderBrowseView(); } catch (_) {}
     }
+
+    try {
+        if (typeof NotificationStack !== 'undefined' && typeof NotificationStack.setOpen === 'function') {
+            NotificationStack.setOpen(view === 'capture');
+        }
+    } catch (_) {}
 }
 
 
@@ -144,6 +191,19 @@ function updateSaveButtonState() {
     } else {
         saveBtn.classList.remove('has-content');
     }
+}
+
+function setCaptureTextareaValue(textarea, nextValue, options = {}) {
+    if (!textarea) return;
+    const { clearSuggestion: shouldClearSuggestion = false } = options;
+
+    textarea.value = nextValue;
+    updateTextareaMirror();
+    updateWordCount();
+    updateSaveButtonState();
+    autoExpandTextarea();
+
+    if (shouldClearSuggestion) clearSuggestion();
 }
 
 
@@ -195,13 +255,14 @@ function appendTagToTextarea(label) {
     tags.push(label);
 
     const tagLine = tags.map(t => `#${t}`).join(' ');
-    textarea.value = content + (content ? '\n' : '') + tagLine;
+    setCaptureTextareaValue(
+        textarea,
+        content + (content ? '\n' : '') + tagLine,
+        { clearSuggestion: true },
+    );
 
     const safePos = Math.min(cursorPos, content.length);
     textarea.selectionStart = textarea.selectionEnd = safePos;
-    updateWordCount();
-    updateSaveButtonState();
-    clearSuggestion();
 }
 
 function removeTagFromTextarea(label) {
@@ -214,16 +275,17 @@ function removeTagFromTextarea(label) {
 
     if (tags.length > 0) {
         const tagLine = tags.map(t => `#${t}`).join(' ');
-        textarea.value = content + (content ? '\n' : '') + tagLine;
+        setCaptureTextareaValue(
+            textarea,
+            content + (content ? '\n' : '') + tagLine,
+            { clearSuggestion: true },
+        );
     } else {
-        textarea.value = content;
+        setCaptureTextareaValue(textarea, content, { clearSuggestion: true });
     }
 
     const safePos = Math.min(cursorPos, content.length);
     textarea.selectionStart = textarea.selectionEnd = safePos;
-    updateWordCount();
-    updateSaveButtonState();
-    clearSuggestion();
 }
 
 
@@ -283,10 +345,13 @@ function updateGhostLayer() {
     const beforeCursor = text.slice(0, cursorPos);
     const afterCursor = text.slice(cursorPos);
 
+    const beforeCursorHtml = escapeHtml(beforeCursor).replace(/#\w+/g, '<span class="inline-tag">$&</span>');
+    const afterCursorHtml = escapeHtml(afterCursor).replace(/#\w+/g, '<span class="inline-tag">$&</span>');
+
     ghost.innerHTML =
-        `<span class="ghost-match">${escapeHtml(beforeCursor)}</span>` +
-        `<span class="ghost-completion">${escapeHtml(completion)}</span>` +
-        `<span class="ghost-match">${escapeHtml(afterCursor)}</span>`;
+        `<span class="ghost-match">${beforeCursorHtml}</span>` +
+        `<span class="inline-tag ghost-completion">${escapeHtml(completion)}</span>` +
+        `<span class="ghost-match">${afterCursorHtml}</span>`;
 }
 
 function clearSuggestion() {
@@ -304,6 +369,59 @@ function updateTextareaMirror() {
     mirror.scrollTop = textarea.scrollTop;
 }
 
+let _cachedMaxTextareaH = null;
+
+function computeMaxTextareaH() {
+    const LINE_H = 20 * 1.6; // 32px
+    const captureBox = document.getElementById('captureBox');
+    const textarea = document.getElementById('captureInput');
+    if (!captureBox || !textarea) return LINE_H * 12;
+
+    // Non-textarea height = everything else in the card (priority row, tag
+    // picker, footer, paddings) — constant regardless of textarea height.
+    const nonTextareaH = captureBox.offsetHeight - textarea.offsetHeight;
+
+    // Allow the card to grow to within 48px of the viewport bottom.
+    const maxCardH = window.innerHeight - captureBox.getBoundingClientRect().top - 48;
+    const maxH = maxCardH - nonTextareaH;
+
+    return Math.max(LINE_H * 3, Math.min(LINE_H * 14, Math.floor(maxH / LINE_H) * LINE_H));
+}
+
+function getMaxTextareaH() {
+    if (_cachedMaxTextareaH === null) _cachedMaxTextareaH = computeMaxTextareaH();
+    return _cachedMaxTextareaH;
+}
+
+function autoExpandTextarea() {
+    const textarea = document.getElementById('captureInput');
+    if (!textarea) return;
+    const LINE_H = 20 * 1.6;
+    const MIN_H = LINE_H;
+    const MAX_H = getMaxTextareaH();
+
+    const currentH = parseFloat(textarea.style.height) || 0;
+
+    if (currentH >= MAX_H) {
+        // Already at cap — read scrollHeight without touching height/scrollTop.
+        const scrollH = textarea.scrollHeight;
+        if (scrollH > MAX_H) {
+            // Content still beyond cap: stay locked. The browser natively
+            // keeps the caret visible in a fixed-height auto-overflow textarea.
+            textarea.style.overflowY = 'auto';
+            return;
+        }
+        // Content shrank back to/below cap — fall through to re-measure.
+    }
+
+    // Safe to collapse-and-measure: below cap or content just shrank under cap.
+    textarea.style.overflowY = 'hidden';
+    textarea.style.height = MIN_H + 'px';
+    const scrollH = textarea.scrollHeight;
+    textarea.style.height = Math.min(scrollH, MAX_H) + 'px';
+    textarea.style.overflowY = scrollH > MAX_H ? 'auto' : 'hidden';
+}
+
 function acceptSuggestion() {
     if (!currentSuggestion) return false;
 
@@ -314,11 +432,10 @@ function acceptSuggestion() {
 
     const before = text.slice(0, hashIndex).replace(/ +$/, '');
     const after = text.slice(cursorPos);
-    textarea.value = before + after;
+    setCaptureTextareaValue(textarea, before + after, { clearSuggestion: true });
     textarea.selectionStart = textarea.selectionEnd = before.length;
 
     activateChipFromAutocomplete(full);
-    clearSuggestion();
 
     return true;
 }
@@ -613,10 +730,7 @@ async function saveThought() {
             saveStarredIds();
         }
 
-        textarea.value = '';
-        updateWordCount();
-        updateSaveButtonState();
-        clearSuggestion();
+        setCaptureTextareaValue(textarea, '', { clearSuggestion: true });
         resetPriorityButtons();
         markImportant = false;
         document.getElementById('pinToggle')?.classList.remove('active');
@@ -2393,6 +2507,7 @@ function _applyMode(mode) {
 document.addEventListener('DOMContentLoaded', () => {
     const textarea = document.getElementById('captureInput');
     textarea.focus();
+    autoExpandTextarea();
 
     renderTagPicker();
     initPriorityButtons();
@@ -2430,14 +2545,30 @@ document.addEventListener('DOMContentLoaded', () => {
         tab.addEventListener('click', () => switchView(tab.dataset.view));
     });
 
+    window.addEventListener('resize', () => { _cachedMaxTextareaH = null; });
+
     textarea.addEventListener('input', () => {
         updateWordCount();
         updateSaveButtonState();
         updateTextareaMirror();
+        autoExpandTextarea();
     });
     textarea.addEventListener('input', updateGhostLayer);
     textarea.addEventListener('click', () => { updateGhostLayer(); updateTextareaMirror(); });
     textarea.addEventListener('scroll', updateTextareaMirror);
+
+    // Prevent wheel-scroll inside the textarea from bubbling up to the page.
+    textarea.addEventListener('wheel', (e) => {
+        if (textarea.scrollHeight <= textarea.clientHeight) return; // not scrollable — let browser handle
+        e.preventDefault();
+        const delta = e.deltaMode === 0 ? e.deltaY : (e.deltaMode === 1 ? e.deltaY * 20 : e.deltaY * 300);
+        textarea.scrollTop += delta;
+        // Sync mirror and ghost immediately without waiting for the scroll event.
+        const mirror = document.getElementById('textareaMirror');
+        const ghost = document.getElementById('ghostLayer');
+        if (mirror) mirror.scrollTop = textarea.scrollTop;
+        if (ghost) ghost.scrollTop = textarea.scrollTop;
+    }, { passive: false });
 
     textarea.addEventListener('keyup', (e) => {
         if (['ArrowLeft','ArrowRight','ArrowUp','ArrowDown','Home','End'].includes(e.key)) {
@@ -2688,129 +2819,395 @@ document.addEventListener('DOMContentLoaded', () => {
 /* ── Section 23: Notification Stack ──────────────────────────── */
 
 const NotificationStack = (() => {
-    let _pollTimer = null;
-    let _knownIds = new Set();
+    const POLL_MS = 30000;
 
-    const TYPE_COLORS = {
-        reminder: '#C47A20',
-        todo:     '#3B6FA8',
-        overdue:  '#dc2626',
-        alarm:    '#6B6A65',
-    };
+    let _listTimer = null;
+    let _badgeTimer = null;
+    let _isOpen = false;
+    let _earlierExpanded = false;
+    let _expandedThoughts = new Set();
+    let _groupsByThought = new Map();
+    let _inFlight = false;
 
-    function _relTime(firedAt) {
-        const diff = Math.floor((Date.now() - new Date(firedAt).getTime()) / 1000);
+    function _relTime(iso) {
+        const t = new Date(iso).getTime();
+        if (!t) return '';
+        const diff = Math.floor((Date.now() - t) / 1000);
         if (diff < 60) return 'just now';
         if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
         if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
         return 'yesterday';
     }
 
-    function _dotColor(type) {
-        return TYPE_COLORS[type] || TYPE_COLORS.alarm;
+    function _truncate(s, maxLen) {
+        const text = String(s || '').replace(/\s+/g, ' ').trim();
+        if (!text) return '';
+        if (text.length <= maxLen) return text;
+        return text.slice(0, maxLen - 1).trimEnd() + '…';
     }
 
-    function render(notifications, unreadCount) {
-        const list = document.getElementById('notif-list');
-        const badge = document.getElementById('notif-badge');
-        const empty = document.getElementById('notif-empty');
-        if (!list) return;
+    function _formatOverdue(minutes) {
+        const m = Math.max(0, parseInt(minutes || 0, 10));
+        if (m < 60) return `${m}m overdue`;
+        const h = Math.floor(m / 60);
+        const mm = m % 60;
+        return mm ? `${h}h ${mm}m overdue` : `${h}h overdue`;
+    }
 
-        // Badge
+    function _pillForGroup(g) {
+        if (!g) return { cls: 'gray', text: 'resolved' };
+        if (g.urgency === 'resolved') return { cls: 'gray', text: 'resolved' };
+        if (g.urgency === 'overdue') return { cls: 'red', text: _formatOverdue(g.minutes_overdue) };
+
+        const secs = g.time_remaining_seconds;
+        if (secs === null || secs === undefined || Number.isNaN(Number(secs))) {
+            return { cls: 'amber', text: 'active' };
+        }
+
+        const s = Math.max(0, parseInt(secs, 10));
+        if (s < 2 * 3600) {
+            const mins = Math.max(1, Math.ceil(s / 60));
+            return { cls: 'amber', text: `in ${mins}m` };
+        }
+
+        const hours = Math.max(1, Math.floor(s / 3600));
+        return { cls: 'green', text: `in ${hours}h` };
+    }
+
+    function _formatDeadline(anchorIso, deadlineLabel) {
+        if (!anchorIso) {
+            if (!deadlineLabel) return null;
+            return String(deadlineLabel);
+        }
+
+        const d = new Date(anchorIso);
+        if (Number.isNaN(d.getTime())) return null;
+        const now = new Date();
+
+        const sameDay = d.getFullYear() === now.getFullYear()
+            && d.getMonth() === now.getMonth()
+            && d.getDate() === now.getDate();
+
+        const timeStr = d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+        if (sameDay) return `${timeStr} today`;
+
+        return d.toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' });
+    }
+
+    function _updateBadges(count) {
+        const n = Math.max(0, parseInt(count || 0, 10));
+
+        const badge = document.getElementById('notif-badge');
         if (badge) {
-            if (unreadCount > 0) {
-                badge.textContent = unreadCount;
+            if (n > 0) {
+                badge.textContent = n;
                 badge.style.display = '';
             } else {
                 badge.style.display = 'none';
             }
         }
 
-        if (!notifications.length) {
-            list.innerHTML = '<div class="notif-empty">No notifications yet</div>';
+        const tabBadge = document.getElementById('notif-tab-badge');
+        if (tabBadge) {
+            if (n > 0) {
+                tabBadge.textContent = n;
+                tabBadge.style.display = '';
+            } else {
+                tabBadge.style.display = 'none';
+            }
+        }
+    }
+
+    function _render(groups, counts) {
+        const list = document.getElementById('notif-list');
+        if (!list) return;
+
+        const total = (counts && typeof counts.total === 'number')
+            ? counts.total
+            : (groups ? groups.length : 0);
+
+        if (!groups || groups.length === 0 || total === 0) {
+            list.innerHTML = '<div class="notif-empty">No notifications</div>';
             return;
         }
 
-        // Determine new IDs (for entrance animation on new arrivals)
-        const newIds = new Set(notifications.map(n => n.id));
+        const overdue = groups.filter(g => g.urgency === 'overdue');
+        const active = groups.filter(g => g.urgency === 'active');
+        const resolved = groups.filter(g => g.urgency === 'resolved');
 
-        const html = notifications.map(n => {
-            const isNew = !_knownIds.has(n.id);
-            const unreadCls = n.is_read ? '' : ' unread';
-            const dot = _dotColor(n.type);
-            const msg = escapeHtml(n.message || '');
-            const timeStr = _relTime(n.fired_at);
-            const typeLabel = n.type || 'alarm';
-            return `<div class="notif-item${unreadCls}${isNew ? ' notif-new' : ''}" data-id="${n.id}" data-read="${n.is_read}">
-  <div class="notif-dot" style="background:${dot}"></div>
-  <div class="notif-body">
-    <div class="notif-msg" title="${msg}">${msg}</div>
-    <div class="notif-meta">
-      <span>${timeStr}</span>
-      <span class="notif-type-label">${typeLabel}</span>
+        const sectionHtml = [];
+
+        const renderCards = (cards, { dimmed = false } = {}) => cards.map(g => {
+            const thoughtId = g.thought_id;
+            const expanded = _expandedThoughts.has(thoughtId);
+
+            const preview = g.is_private ? '🔒 Private reminder' : _truncate(g.preview || g.thought_text || '', 70);
+            const timeAgo = _relTime(g.most_recent_fire_at);
+            const pill = _pillForGroup(g);
+            const alerts = parseInt(g.alarm_count || 0, 10);
+            const showAlerts = alerts > 1;
+
+            const prKey = (g.priority_key || '').toLowerCase();
+            const prAttr = (prKey === 'p0' || prKey === 'p1' || prKey === 'p2') ? prKey : '';
+            const prLabel = prAttr ? prAttr.toUpperCase() : '';
+
+            const deadline = _formatDeadline(g.anchor_iso, g.deadline_label);
+            const deadlineLine = deadline ? `Deadline: ${escapeHtml(deadline)}` : '';
+
+            const doneDisabled = g.thought_status === 'done' || g.thought_status === 'archived';
+            const snoozeDisabled = !g.most_recent_active_alarm_id || g.urgency === 'resolved' || g.zone === 'open_todo';
+            const dismissDisabled = !g.active_alarm_ids || g.active_alarm_ids.length === 0 || g.urgency === 'resolved';
+
+            return `<div class="notif-card${expanded ? ' expanded' : ''}${dimmed ? ' notif-dimmed' : ''}" data-thought-id="${thoughtId}" data-priority="${escapeAttr(prAttr)}">
+  <div class="notif-card-top" role="button" tabindex="0">
+    <div class="notif-card-main">
+      <div class="notif-preview" title="${escapeAttr(preview)}">${escapeHtml(preview)}</div>
+      <div class="notif-meta-row">
+        <span class="notif-timeago">${escapeHtml(timeAgo)}</span>
+        <span class="notif-pill ${pill.cls}">${escapeHtml(pill.text)}</span>
+        ${showAlerts ? `<span class="notif-pill notif-alert-pill">${alerts} alerts</span>` : ''}
+      </div>
+    </div>
+    <div class="notif-chevron">▾</div>
+  </div>
+  <div class="notif-card-expanded">
+    <div class="notif-quote">${escapeHtml(g.thought_text || '')}</div>
+    <div class="notif-detail-row">
+      <div class="notif-deadline-line">${deadlineLine}</div>
+      ${prAttr ? `<div class="notif-priority-label ${prAttr}">${prLabel}</div>` : ''}
+    </div>
+    <div class="notif-actions">
+      <button class="notif-action-btn done" data-action="done" data-thought-id="${thoughtId}" ${doneDisabled ? 'disabled' : ''}>Done</button>
+      <button class="notif-action-btn snooze" data-action="snooze" data-thought-id="${thoughtId}" data-alarm-id="${escapeAttr(g.most_recent_active_alarm_id || '')}" ${snoozeDisabled ? 'disabled' : ''}>Snooze</button>
+      <button class="notif-action-btn dismiss" data-action="dismiss" data-thought-id="${thoughtId}" ${dismissDisabled ? 'disabled' : ''}>Dismiss</button>
     </div>
   </div>
-  <button class="notif-dismiss" data-id="${n.id}" title="Dismiss">&times;</button>
 </div>`;
         }).join('');
 
-        list.innerHTML = html;
-        _knownIds = newIds;
+        if (overdue.length) {
+            sectionHtml.push(`<div class="notif-section"><div class="notif-section-label">Overdue</div>${renderCards(overdue)}</div>`);
+        }
+        if (active.length) {
+            sectionHtml.push(`<div class="notif-section"><div class="notif-section-label">Active</div>${renderCards(active)}</div>`);
+        }
+
+        const earlierCount = resolved.length;
+        if (earlierCount > 0) {
+            const label = `Earlier (${earlierCount})`;
+            sectionHtml.push(
+                `<button class="notif-earlier-toggle" id="notif-earlier-toggle" type="button">
+  <span>${escapeHtml(label)}</span>
+  <span class="notif-chevron">${_earlierExpanded ? '▴' : '▾'}</span>
+</button>`
+            );
+            if (_earlierExpanded) {
+                sectionHtml.push(`<div class="notif-section">${renderCards(resolved, { dimmed: true })}</div>`);
+            }
+        }
+
+        list.innerHTML = sectionHtml.join('');
     }
 
-    async function load() {
+    async function _fetchGrouped() {
         try {
-            const res = await fetch(`${API}/api/notifications?limit=50`);
-            if (!res.ok) return;
-            const data = await res.json();
-            render(data.notifications || [], data.unread_count || 0);
-        } catch (_) {}
+            const res = await fetch(`${API}/api/notifications/grouped`);
+            if (!res.ok) return null;
+            return await res.json();
+        } catch (_) {
+            return null;
+        }
     }
 
-    async function markRead(id) {
+    async function _poll({ renderList } = { renderList: true }) {
+        if (_inFlight) return;
+        _inFlight = true;
         try {
-            await fetch(`${API}/api/notifications/read`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ id }),
-            });
-        } catch (_) {}
+            const data = await _fetchGrouped();
+            if (!data) return;
+
+            const groups = data.groups || [];
+            const counts = data.counts || {};
+            _groupsByThought = new Map(groups.map(g => [g.thought_id, g]));
+
+            const badgeCount = (counts.overdue || 0) + (counts.active || 0);
+            _updateBadges(badgeCount);
+
+            if (renderList) {
+                // Drop expanded IDs that no longer exist.
+                const ids = new Set(groups.map(g => g.thought_id));
+                _expandedThoughts = new Set([..._expandedThoughts].filter(id => ids.has(id)));
+                _render(groups, counts);
+            }
+        } finally {
+            _inFlight = false;
+        }
     }
 
-    async function markAllRead() {
-        try {
-            await fetch(`${API}/api/notifications/read-all`, { method: 'POST' });
-            await load();
-        } catch (_) {}
+    function _startListPolling() {
+        if (_listTimer) return;
+        _poll({ renderList: true });
+        _listTimer = setInterval(() => _poll({ renderList: true }), POLL_MS);
     }
 
-    async function dismiss(id) {
+    function _stopListPolling() {
+        if (_listTimer) clearInterval(_listTimer);
+        _listTimer = null;
+    }
+
+    function _startBadgePolling() {
+        if (_badgeTimer) return;
+        _poll({ renderList: false });
+        _badgeTimer = setInterval(() => _poll({ renderList: false }), POLL_MS);
+    }
+
+    function _stopBadgePolling() {
+        if (_badgeTimer) clearInterval(_badgeTimer);
+        _badgeTimer = null;
+    }
+
+    function setOpen(open) {
+        _isOpen = !!open;
+        if (_isOpen) {
+            _stopBadgePolling();
+            _startListPolling();
+        } else {
+            _stopListPolling();
+            _startBadgePolling();
+        }
+    }
+
+    function _animateRemove(thoughtId) {
+        const el = document.querySelector(`.notif-card[data-thought-id="${thoughtId}"]`);
+        if (!el) return;
+        el.classList.add('removing');
+    }
+
+    async function _postJson(path, body) {
+        const res = await fetch(`${API}${path}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(body || {}),
+        });
+        let data = null;
+        try { data = await res.json(); } catch (_) {}
+        return { ok: res.ok, status: res.status, data };
+    }
+
+    async function _completeThought(thoughtId) {
+        const { ok, data } = await _postJson('/api/thoughts/complete', { thought_id: thoughtId });
+        if (!ok) throw new Error(data?.error || 'Could not mark done');
+    }
+
+    async function _snoozeAlarm(alarmId) {
+        const { ok, data } = await _postJson('/api/alarms/snooze', { alarm_id: alarmId });
+        if (!ok) throw new Error(data?.error || 'Could not snooze');
+        return data;
+    }
+
+    async function _dismissAlarm(alarmId) {
+        const { ok, data } = await _postJson('/api/alarms/dismiss', { alarm_id: alarmId });
+        if (!ok) throw new Error(data?.error || 'Could not dismiss');
+    }
+
+    async function _dismissThoughtActiveAlarms(group) {
+        const ids = Array.isArray(group?.active_alarm_ids) ? group.active_alarm_ids : [];
+        for (const id of ids) {
+            await _dismissAlarm(id);
+        }
+    }
+
+    async function _handleAction(btn) {
+        const action = btn.dataset.action;
+        const thoughtId = parseInt(btn.dataset.thoughtId, 10);
+        const group = _groupsByThought.get(thoughtId);
+        if (!group) return;
+
+        btn.disabled = true;
+
         try {
-            await fetch(`${API}/api/notifications/${id}`, { method: 'DELETE' });
-            await load();
-        } catch (_) {}
+            if (action === 'done') {
+                await _completeThought(thoughtId);
+                SFX.done();
+                _animateRemove(thoughtId);
+                setTimeout(() => _poll({ renderList: _isOpen }), 310);
+                return;
+            }
+
+            if (action === 'snooze') {
+                const alarmId = parseInt(btn.dataset.alarmId, 10);
+                if (!alarmId) return;
+                const data = await _snoozeAlarm(alarmId);
+                SFX.swooshOut();
+                const mins = data?.snooze_minutes;
+                if (typeof showToast === 'function') {
+                    showToast(mins ? `Snoozed for ${mins}m` : 'Snoozed');
+                }
+                _animateRemove(thoughtId);
+                setTimeout(() => _poll({ renderList: _isOpen }), 310);
+                return;
+            }
+
+            if (action === 'dismiss') {
+                await _dismissThoughtActiveAlarms(group);
+                SFX.dismiss();
+                _animateRemove(thoughtId);
+                setTimeout(() => _poll({ renderList: _isOpen }), 310);
+            }
+        } catch (e) {
+            if (typeof showToast === 'function') showToast(e?.message || 'Something went wrong');
+        } finally {
+            btn.disabled = false;
+        }
+    }
+
+    async function _clearAll() {
+        const groups = [..._groupsByThought.values()];
+        const ids = new Set();
+        for (const g of groups) {
+            if (Array.isArray(g.active_alarm_ids)) {
+                for (const id of g.active_alarm_ids) ids.add(id);
+            }
+        }
+        if (ids.size === 0) return;
+
+        try {
+            for (const id of ids) {
+                await _dismissAlarm(id);
+            }
+            SFX.dismiss();
+            _poll({ renderList: _isOpen });
+        } catch (e) {
+            if (typeof showToast === 'function') showToast(e?.message || 'Could not clear notifications');
+        }
     }
 
     function _handleClick(e) {
-        const dismissBtn = e.target.closest('.notif-dismiss');
-        if (dismissBtn) {
-            e.stopPropagation();
-            dismiss(parseInt(dismissBtn.dataset.id, 10));
+        const earlierToggle = e.target.closest('#notif-earlier-toggle');
+        if (earlierToggle) {
+            e.preventDefault();
+            _earlierExpanded = !_earlierExpanded;
+            _poll({ renderList: true });
             return;
         }
-        const item = e.target.closest('.notif-item');
-        if (item && item.dataset.read === '0') {
-            const id = parseInt(item.dataset.id, 10);
-            item.classList.remove('unread');
-            item.dataset.read = '1';
-            markRead(id);
-            // Update badge
-            const badge = document.getElementById('notif-badge');
-            if (badge) {
-                const cur = parseInt(badge.textContent, 10) - 1;
-                if (cur <= 0) { badge.style.display = 'none'; }
-                else { badge.textContent = cur; }
-            }
+
+        const actionBtn = e.target.closest('.notif-action-btn');
+        if (actionBtn) {
+            e.preventDefault();
+            e.stopPropagation();
+            if (actionBtn.disabled) return;
+            _handleAction(actionBtn);
+            return;
+        }
+
+        const top = e.target.closest('.notif-card-top');
+        if (top) {
+            const card = top.closest('.notif-card');
+            const thoughtId = parseInt(card?.dataset?.thoughtId, 10);
+            if (!thoughtId) return;
+            if (_expandedThoughts.has(thoughtId)) _expandedThoughts.delete(thoughtId);
+            else _expandedThoughts.add(thoughtId);
+            card.classList.toggle('expanded');
         }
     }
 
@@ -2819,11 +3216,10 @@ const NotificationStack = (() => {
         if (list) list.addEventListener('click', _handleClick);
 
         const clearAll = document.getElementById('notif-clear-all');
-        if (clearAll) clearAll.addEventListener('click', markAllRead);
+        if (clearAll) clearAll.addEventListener('click', (e) => { e.preventDefault(); _clearAll(); });
 
-        load();
-        _pollTimer = setInterval(load, 30000);
+        setOpen(document.getElementById('captureView')?.classList.contains('active'));
     }
 
-    return { init, load };
+    return { init, setOpen };
 })();
