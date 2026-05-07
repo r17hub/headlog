@@ -3,8 +3,10 @@
 Personal thought capture system. Runs on localhost with zero dependencies.
 
 ```
-ollama serve & python app.py
+cd ~/dev/r17/headlog || exit 1; ollama serve & python3 app.py
 ```
+
+Then open: http://localhost:7777
 
 // Stop everything (kills Ollama + app ports)
 
